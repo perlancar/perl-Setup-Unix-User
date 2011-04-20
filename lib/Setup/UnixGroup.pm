@@ -10,23 +10,9 @@ require Exporter;
 our @ISA       = qw(Exporter);
 our @EXPORT_OK = qw(setup_unix_group);
 
-use String::ShellQuote;
-use Unix::GroupFile;
+use Passwd::Unix;
 
 our %SPEC;
-
-sub _create_unixg_object {
-    my ($dry_run, $path) = @_;
-    $path //= "/etc/group";
-
-    my $unixg = Unix::GroupFile->new(
-        $path,
-        locking => $dry_run ? "none" : "flock",
-        mode    => $dry_run ? "r"    : "r+",
-    );
-    $unixg or return [500, "Can't create Unix::GroupFile group: $!"];
-    [200, "OK", $unixg];
-}
 
 $SPEC{setup_unix_group} = {
     summary  => "Makes sure a Unix group exists",
@@ -61,15 +47,16 @@ sub setup_unix_group {
     $name =~ /^[A-Za-z0-9_-]+$/ or return [400, "Invalid group name syntax"];
 
     # create object
-    my $res            = _create_unixg_object(
-        $dry_run,
-        $args{_group_file_path});
-    return $res unless $res->[0] == 200;
-    my $unixg          = $res->[2];
-    #$log->tracef("unix group object: %s", $unixg);
+    my $group_path   = $args{_group_path}   // "/etc/group";
+    my $gshadow_path = $args{_gshadow_path} // "/etc/gshadow";
+    my $pu = Passwd::Unix->new(
+        group    => $group_path,
+        gshadow  => $gshadow_path,
+        warnings => 1,
+    );
 
     # check current state
-    my @g              = $unixg->group($name);
+    my @g              = $pu->group($name);
     my $exists         = $g[0] ? 1:0;
     my $state_ok       = 1;
     if (!$exists) {
@@ -82,7 +69,7 @@ sub setup_unix_group {
             unless $state_ok;
         return [304, "dry run"] if $dry_run;
         my $undo_data = $args{-undo_data};
-        my $res = _undo(\%args, $undo_data, 0, $unixg);
+        my $res = _undo(\%args, $undo_data, 0, $pu);
         if ($res->[0] == 200) {
             return [200, "OK", undef, {redo_data=>$res->[2]}];
         } else {
@@ -93,7 +80,7 @@ sub setup_unix_group {
             if $state_ok;
         return [304, "dry run"] if $dry_run;
         my $redo_data = $args{-redo_data};
-        my $res = _redo(\%args, $redo_data, 0, $unixg);
+        my $res = _redo(\%args, $redo_data, 0, $pu);
         if ($res->[0] == 200) {
             return [200, "OK", undef, {undo_data=>$res->[2]}];
         } else {
@@ -109,13 +96,15 @@ sub setup_unix_group {
     $log->debug("fix: creating Unix group $name ...");
 
     $log->trace("finding an unused GID ...");
-    my @gids = map {($unixg->group($_))[1]} $unixg->groups;
+    my @gids = map {($pu->group($_))[0]} $pu->groups;
     #$log->tracef("gids = %s", \@gids);
     my $gid = $args{min_new_gid} // 1;
     while (1) { last unless $gid ~~ @gids; $gid++ }
 
-    $unixg->group($name, "x", $gid);
-    $unixg->commit;
+    unless ($pu->group($name, $gid, [])) {
+        _undo(\%args, \@undo, 1, $pu);
+        return [500, "Can't add group to $group_path"];
+    }
     push @undo, ["delete", $gid];
 
     my $meta = {};
@@ -124,10 +113,10 @@ sub setup_unix_group {
 }
 
 sub _undo_or_redo {
-    my ($which, $args, $undo_data, $is_rollback, $unixg) = @_;
+    my ($which, $args, $undo_data, $is_rollback, $pu) = @_;
     die "BUG: which must be undo or redo"
         unless $which && $which =~ /^(undo|redo)$/;
-    die "BUG: Unix::GroupFile object not supplied" unless $unixg;
+    die "BUG: Passwd::Unix object not supplied" unless $pu;
     return [200, "Nothing to do"] unless defined($undo_data);
     die "BUG: Invalid undo data, must be arrayref"
         unless ref($undo_data) eq 'ARRAY';
@@ -144,13 +133,17 @@ sub _undo_or_redo {
         my ($cmd, @arg) = @$undo_step;
         my $err;
         if ($cmd eq 'delete') {
-            $unixg->delete($name);
-            $unixg->commit;
-            push @redo_data, ['create', $arg[0]];
+            if ($pu->del_group($name)) {
+                push @redo_data, ['create', $arg[0]];
+            } else {
+                $err = "failed";
+            }
         } elsif ($cmd eq 'create') {
-            $unixg->group($name, "x", $arg[0]);
-            $unixg->commit;
-            push @redo_data, ['delete', $arg[0]];
+            if ($pu->group($name, $arg[0], [])) {
+                push @redo_data, ['delete', $arg[0]];
+            } else {
+                $err = "failed";
+            }
         } else {
             die "BUG: Invalid ${which}_step[$i], unknown command: $cmd";
         }
