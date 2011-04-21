@@ -1,4 +1,4 @@
-package Setup::UnixGroup;
+package Setup::Unix::Group;
 # ABSTRACT: Make sure a Unix group exists
 
 use 5.010;

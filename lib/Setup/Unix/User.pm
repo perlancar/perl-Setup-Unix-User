@@ -1,14 +1,14 @@
-package Setup::UnixUser;
-# ABSTRACT: Make sure a Unix user exists
+package Setup::Unix::User;
+# ABSTRACT: Ensure existence of Unix user and its group memberships
 
 use 5.010;
 use strict;
 use warnings;
 use Log::Any '$log';
 
-use Setup::UnixGroup qw(setup_unix_group);
-use Setup::File      qw(setup_file);
-use Setup::Dir       qw(setup_dir);
+use Setup::Unix::Group qw(setup_unix_group);
+use Setup::File        qw(setup_file);
+use Setup::Dir         qw(setup_dir);
 
 require Exporter;
 our @ISA       = qw(Exporter);
@@ -60,8 +60,8 @@ _
         #    summary => 'Set password when creating new user',
         #}],
         new_gecos => ['str' => {
-            summary => 'Set gecos (usually, full name) when creating '.
-                'new user, defaults to <username>',
+            summary => 'Set gecos (usually, full name) when creating new user',
+            default => '',
         }],
         new_home_dir => ['str' => {
             summary => 'Set home directory when creating new user, '.
@@ -74,6 +74,7 @@ _
         }],
         new_shell => ['str' => {
             summary => 'Set shell when creating new user',
+            default => '/bin/bash',
         }],
         skel_dir => [str => {
             summary => 'Directory to get skeleton files when creating new user',
@@ -92,6 +93,9 @@ _
     features => {undo=>1, dry_run=>1},
 };
 sub setup_unix_user {
+    return [412, "must run as root (currently required by Passwd::Unix)"]
+        unless $) =~ /^0/;
+
     my %args           = @_;
     my $dry_run        = $args{-dry_run};
     my $undo_action    = $args{-undo_action} // "";
