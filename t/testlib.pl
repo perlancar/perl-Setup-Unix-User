@@ -60,10 +60,7 @@ u1:!::
 u2:!::u1
 _
 
-    diag "temp passwd file = $passwd_path";
-    diag "temp group file = $group_path";
-    diag "temp shadow file = $shadow_path";
-    diag "temp gshadow file = $gshadow_path";
+    diag "tmp dir = $tmp_dir";
 }
 
 sub teardown {
@@ -110,7 +107,7 @@ sub _test_setup_unix_group_or_file {
                 or diag explain($res);
         }
 
-        my $pu = Passwd::Unix->new(
+        my $pu = Passwd::Unix::Alt->new(
             passwd  => $passwd_path,
             group   => $group_path,
             shadow  => $shadow_path,

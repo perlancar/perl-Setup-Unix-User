@@ -10,7 +10,7 @@ require Exporter;
 our @ISA       = qw(Exporter);
 our @EXPORT_OK = qw(setup_unix_group);
 
-use Passwd::Unix;
+use Passwd::Unix::Alt;
 
 our %SPEC;
 
@@ -47,16 +47,23 @@ sub setup_unix_group {
     $name =~ /^[A-Za-z0-9_-]+$/ or return [400, "Invalid group name syntax"];
 
     # create object
+    my $passwd_path  = $args{_passwd_path}  // "/etc/passwd";
     my $group_path   = $args{_group_path}   // "/etc/group";
+    my $shadow_path  = $args{_shadow_path}  // "/etc/shadow";
     my $gshadow_path = $args{_gshadow_path} // "/etc/gshadow";
-    my $pu = Passwd::Unix->new(
+    my $pu = Passwd::Unix::Alt->new(
+        passwd   => $passwd_path,
         group    => $group_path,
+        shadow   => $shadow_path,
         gshadow  => $gshadow_path,
-        warnings => 1,
+        warnings => 0,
     );
 
     # check current state
     my @g              = $pu->group($name);
+    return [500, "Can't get Unix group: $Passwd::Unix::Alt::errstr"]
+        if $Passwd::Unix::Alt::errstr &&
+            $Passwd::Unix::Alt::errstr !~ /unknown group/i;
     my $exists         = $g[0] ? 1:0;
     my $state_ok       = 1;
     if (!$exists) {
@@ -101,9 +108,11 @@ sub setup_unix_group {
     my $gid = $args{min_new_gid} // 1;
     while (1) { last unless $gid ~~ @gids; $gid++ }
 
-    unless ($pu->group($name, $gid, [])) {
+    $pu->group($name, $gid, []);
+    if ($Passwd::Unix::Alt::errstr) {
         _undo(\%args, \@undo, 1, $pu);
-        return [500, "Can't add group to $group_path"];
+        return [500, "Can't add group to $group_path: ".
+                    "$Passwd::Unix::Alt::errstr"];
     }
     push @undo, ["delete", $gid];
 
@@ -116,7 +125,7 @@ sub _undo_or_redo {
     my ($which, $args, $undo_data, $is_rollback, $pu) = @_;
     die "BUG: which must be undo or redo"
         unless $which && $which =~ /^(undo|redo)$/;
-    die "BUG: Passwd::Unix object not supplied" unless $pu;
+    die "BUG: Passwd::Unix::Alt object not supplied" unless $pu;
     return [200, "Nothing to do"] unless defined($undo_data);
     die "BUG: Invalid undo data, must be arrayref"
         unless ref($undo_data) eq 'ARRAY';
@@ -133,16 +142,18 @@ sub _undo_or_redo {
         my ($cmd, @arg) = @$undo_step;
         my $err;
         if ($cmd eq 'delete') {
-            if ($pu->del_group($name)) {
-                push @redo_data, ['create', $arg[0]];
+            $pu->del_group($name);
+            if ($Passwd::Unix::Alt::errstr) {
+                $err = $Passwd::Unix::Alt::errstr;
             } else {
-                $err = "failed";
+                push @redo_data, ['create', $arg[0]];
             }
         } elsif ($cmd eq 'create') {
-            if ($pu->group($name, $arg[0], [])) {
-                push @redo_data, ['delete', $arg[0]];
+            $pu->group($name, $arg[0], []);
+            if ($Passwd::Unix::Alt::errstr) {
+                $err = $Passwd::Unix::Alt::errstr;
             } else {
-                $err = "failed";
+                push @redo_data, ['delete', $arg[0]];
             }
         } else {
             die "BUG: Invalid ${which}_step[$i], unknown command: $cmd";

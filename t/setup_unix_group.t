@@ -26,10 +26,9 @@ test_setup_unix_group(
     status     => 200,
     posttest   => sub {
         my $res = shift;
-        is($res->[2]{gid}, 11, "gid");
+        is($res->[2]{gid}, 3, "gid");
     },
 );
-goto DONE_TESTING;
 test_setup_unix_group(
     name       => "create (with undo, min_new_gid)",
     args       => {name=>"g2", min_new_gid=>1000, -undo_action=>"do"},
