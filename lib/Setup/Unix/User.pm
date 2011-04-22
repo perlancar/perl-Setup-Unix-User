@@ -249,12 +249,12 @@ sub setup_unix_user {
         $exists = 1;
 
         if ($create_home_dir) {
-            $log->debug("fix: creating home dir ...");
+            $log->debugf("fix: creating home dir %s ...", $new_home_dir);
             # XXX
 
             if ($use_skel_dir) {
-                $log->debug("fix: copying files from skeleton %s ...",
-                            $skel_dir);
+                $log->debugf("fix: copying files from skeleton %s ...",
+                             $skel_dir);
                 # XXX
             }
         }
