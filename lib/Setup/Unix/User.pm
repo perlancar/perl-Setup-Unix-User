@@ -9,6 +9,7 @@ use Log::Any '$log';
 use Setup::Unix::Group qw(setup_unix_group);
 use Setup::File        qw(setup_file);
 use Setup::Dir         qw(setup_dir);
+use Text::Password::Pronounceable;
 
 require Exporter;
 our @ISA       = qw(Exporter);
@@ -27,7 +28,7 @@ sub _get_user_membership {
 }
 
 sub _rand_pass {
-    join "", map { rand() } 1..5;
+    Text::Password::Pronounceable->generate(10, 16);
 }
 
 $SPEC{setup_unix_user} = {
@@ -223,13 +224,15 @@ sub setup_unix_user {
                 _group_path => $group_path,
                 _gshadow_path => $gshadow_path,
                 min_new_gid => $uid,
+                -undo_action => $save_undo ? 'do' : undef,
             );
             my $res = setup_unix_group(%g_args);
+            #$log->tracef("res from setup_unix_group: %s", $res);
             if ($res->[0] != 200) {
                 _undo(\%args, \@undo, 1, $pu);
                 return [500, "Can't create Unix group: $res->[0] - $res->[1]"];
             } else {
-                $gid = $res->[2];
+                $gid = $res->[2]{gid};
                 push @undo,
                     ["undo_setup_group", \%g_args, $res->[3]{undo_data}];
             }
@@ -239,8 +242,9 @@ sub setup_unix_user {
         $pu->user($name, $pu->encpass($new_password), $uid, $gid, $new_gecos,
                   $new_home_dir, $new_shell);
         if ($Passwd::Unix::Alt::errstr) {
+            my $err = $Passwd::Unix::Alt::errstr; # avoid being reset by _undo
             _undo(\%args, \@undo, 1, $pu);
-            return [500, "Can't create Unix user: $Passwd::Unix::Alt::errstr"];
+            return [500, "Can't create Unix user: $err"];
         } else {
             push @undo, ["delete", $new_password, $uid, $gid, $new_gecos,
                          $new_home_dir, $new_shell];

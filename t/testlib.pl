@@ -9,7 +9,6 @@ use Setup::Unix::Group qw(setup_unix_group);
 use Setup::Unix::User  qw(setup_unix_user);
 use Test::More 0.96;
 
-my $tmp_dir;
 my $passwd_path;
 my $shadow_path;
 my $group_path;
@@ -19,10 +18,10 @@ sub setup {
     plan skip_all => "No /etc/passwd, probably not Unix system"
         unless -f "/etc/passwd";
 
-    $tmp_dir = tempdir(CLEANUP => 1);
-    $CWD = $tmp_dir;
+    $::tmp_dir = tempdir(CLEANUP => 1);
+    $CWD = $::tmp_dir;
 
-    $passwd_path = "$tmp_dir/passwd";
+    $passwd_path = "$::tmp_dir/passwd";
     write_file($passwd_path, <<'_');
 root:x:0:0:root:/root:/bin/bash
 bin:x:1:1:bin:/bin:/bin/sh
@@ -31,7 +30,7 @@ u1:x:1000:1000::/home/u1:/bin/bash
 u2:x:1001:1001::/home/u2:/bin/bash
 _
 
-    $shadow_path = "$tmp_dir/shadow";
+    $shadow_path = "$::tmp_dir/shadow";
     write_file($shadow_path, <<'_');
 root:*:14607:0:99999:7:::
 bin:*:14607:0:99999:7:::
@@ -40,17 +39,17 @@ u1:*:14607:0:99999:7:::
 u2:*:14607:0:99999:7:::
 _
 
-    $group_path = "$tmp_dir/group";
+    $group_path = "$::tmp_dir/group";
     write_file($group_path, <<'_');
 root:x:0:
 bin:x:1:
 daemon:x:2:
 nobody:x:111:
 u1:x:1000:u1
-u2:x:1001:u2
+u2:x:1002:u2
 _
 
-    $gshadow_path = "$tmp_dir/gshadow";
+    $gshadow_path = "$::tmp_dir/gshadow";
     write_file($gshadow_path, <<'_');
 root:::
 bin:::
@@ -60,7 +59,13 @@ u1:!::
 u2:!::u1
 _
 
-    diag "tmp dir = $tmp_dir";
+    # setup skeleton
+    mkdir("$::tmp_dir/skel");
+    mkdir("$::tmp_dir/skel/dir1");
+    write_file("$::tmp_dir/skel/dir1/.file1", "file 1");
+    write_file("$::tmp_dir/skel/.file2", "file 2");
+
+    diag "tmp dir = $::tmp_dir";
 }
 
 sub teardown {
@@ -141,7 +146,7 @@ sub _test_setup_unix_group_or_file {
         }
 
         if ($args{posttest}) {
-            $args{posttest}->($res, $name);
+            $args{posttest}->($res, $name, $pu);
         }
     };
 }

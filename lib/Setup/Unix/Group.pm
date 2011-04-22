@@ -104,7 +104,7 @@ sub setup_unix_group {
 
     $log->trace("finding an unused GID ...");
     my @gids = map {($pu->group($_))[0]} $pu->groups;
-    #$log->tracef("gids = %s", \@gids);
+    $log->tracef("gids = %s", \@gids);
     my $gid = $args{min_new_gid} // 1;
     while (1) { last unless $gid ~~ @gids; $gid++ }
 
