@@ -37,12 +37,12 @@ _
 };
 sub setup_unix_group {
     my %args           = @_;
+    $log->tracef("=> setup_unix_group(%s)", \%args);
     my $dry_run        = $args{-dry_run};
     my $undo_action    = $args{-undo_action} // "";
 
     # check args
     my $name           = $args{name};
-    $log->trace('=> setup_unix_group(name=$name)');
     $name or return [400, "Please specify name"];
     $name =~ /^[A-Za-z0-9_-]+$/ or return [400, "Invalid group name syntax"];
 
@@ -127,7 +127,7 @@ sub _undo_or_redo {
         unless $which && $which =~ /^(undo|redo)$/;
     die "BUG: Passwd::Unix::Alt object not supplied" unless $pu;
     return [200, "Nothing to do"] unless defined($undo_data);
-    die "BUG: Invalid undo data, must be arrayref"
+    die "BUG: Invalid $which data, must be arrayref"
         unless ref($undo_data) eq 'ARRAY';
 
     my $name = $args->{name};

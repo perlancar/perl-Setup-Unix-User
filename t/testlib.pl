@@ -6,7 +6,7 @@ use File::chdir;
 use File::Slurp;
 use File::Temp qw(tempdir);
 use Setup::Unix::Group qw(setup_unix_group);
-#use Setup::Unix::User qw(setup_unix_user);
+use Setup::Unix::User  qw(setup_unix_user);
 use Test::More 0.96;
 
 my $tmp_dir;

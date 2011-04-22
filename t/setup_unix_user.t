@@ -16,19 +16,21 @@ setup();
 
 test_setup_unix_user(
     name       => "create (dry run)",
-    args       => {name=>"u5", -dry_run=>1},
+    args       => {name=>"u3", -dry_run=>1},
     status     => 304,
     exists     => 0,
 );
 test_setup_unix_user(
     name       => "create (with create_home_dir=0)",
-    args       => {name=>"u5", create_home_dir=>0},
+    args       => {name=>"u3", create_home_dir=>0},
     status     => 200,
     posttest   => sub {
         my $res = shift;
         is($res->[2]{uid}, 11, "uid");
+        is($res->[2]{gid}, 11, "gid");
     },
 );
+goto DONE_TESTING;
 test_setup_unix_user(
     name       => "create (with undo, min_new_uid, new_password, new_gecos, ".
         "new_home_dir, new_home_dir_mode, new_shell, member_of, not_member_of)",

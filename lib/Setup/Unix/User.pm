@@ -16,8 +16,22 @@ our @EXPORT_OK = qw(setup_unix_user);
 
 our %SPEC;
 
+sub _get_user_membership {
+    my ($name, $pu) = @_;
+    my @res;
+    for ($pu->groups) {
+        my @g = $pu->group($_);
+        push @res, $_ if $name ~~ @{$g[1]};
+    }
+    @res;
+}
+
+sub _rand_pass {
+    join "", map { rand() } 1..5;
+}
+
 $SPEC{setup_unix_user} = {
-    summary  => "Make sure a Unix user exists",
+    summary  => "Ensure existence of Unix user and its group memberships",
     description => <<'_',
 
 On do, will create Unix user if not already exists.
@@ -55,10 +69,10 @@ _
                 'member of',
             of => 'str*',
         }],
-        # most unix systems use shadow nowadays anyway
-        #new_password => ['str' => {
-        #    summary => 'Set password when creating new user',
-        #}],
+        new_password => ['str' => {
+            summary => 'Set password when creating new user',
+            description => 'Default is a random password',
+        }],
         new_gecos => ['str' => {
             summary => 'Set gecos (usually, full name) when creating new user',
             default => '',
@@ -93,53 +107,92 @@ _
     features => {undo=>1, dry_run=>1},
 };
 sub setup_unix_user {
-    return [412, "must run as root (currently required by Passwd::Unix)"]
-        unless $) =~ /^0/;
-
     my %args           = @_;
+    $log->tracef("=> setup_unix_user(%s)", \%args);
     my $dry_run        = $args{-dry_run};
     my $undo_action    = $args{-undo_action} // "";
 
     # check args
     my $name           = $args{name};
-    $log->trace('=> setup_unix_group(name=$name)');
     $name or return [400, "Please specify name"];
     $name =~ /^[A-Za-z0-9_-]+$/ or return [400, "Invalid group name syntax"];
+    my $new_password      = $args{new_password}      // _rand_pass();
+    my $new_gecos         = $args{new_gecos}         // "";
+    my $new_home_dir      = $args{new_home_dir}      // "/home/$name";
+    my $new_home_dir_mode = $args{new_home_dir_mode} // 0700;
+    my $new_shell         = $args{new_shell}         // "/bin/bash";
+    my $create_home_dir   = $args{create_home_dir}   // 1;
+    my $use_skel_dir      = $args{use_skel_dir}      // 1;
+    my $skel_dir          = $args{skel_dir}          // "/etc/skel";
 
     # create object
-    my $res            = _create_unixu_object(
-        $dry_run,
-        $args{_group_file_path});
-    return $res unless $res->[0] == 200;
-    my $unixg          = $res->[2];
-    #$log->tracef("unix group object: %s", $unixg);
+    my $passwd_path  = $args{_passwd_path}  // "/etc/passwd";
+    my $group_path   = $args{_group_path}   // "/etc/group";
+    my $shadow_path  = $args{_shadow_path}  // "/etc/shadow";
+    my $gshadow_path = $args{_gshadow_path} // "/etc/gshadow";
+    my $pu = Passwd::Unix::Alt->new(
+        passwd   => $passwd_path,
+        group    => $group_path,
+        shadow   => $shadow_path,
+        gshadow  => $gshadow_path,
+        warnings => 0,
+    );
 
     # check current state
-    my @g              = $unixg->group($name);
-    my $exists         = $g[0] ? 1:0;
+    my @u              = $pu->user($name);
+    my $exists         = @u ? 1:0;
     my $state_ok       = 1;
-    if (!$exists) {
-        $log->tracef("nok: unix group $name doesn't exist");
-        $state_ok = 0;
+    my $uid;
+    my $gid;
+    {
+        if (!$exists) {
+            $log->tracef("nok: unix user $name doesn't exist");
+            $state_ok = 0;
+            last;
+        }
+
+        $uid = $u[1];
+        $gid = $u[2];
+
+        my @membership = _get_user_membership($name, $pu);
+        my $member_of = $args{member_of} // [];
+        push @$member_of, $name unless $name ~~ @$member_of;
+        if ($member_of) {
+            for (@{ $args{member_of} }) {
+                unless ($_ ~~ @membership) {
+                    $log->tracef("nok: should be member of $_ but isn't");
+                    $state_ok = 0;
+                }
+            }
+        }
+        if ($args{not_member_of}) {
+            for (@{ $args{not_member_of} }) {
+                if ($_ ~~ @membership) {
+                    $log->tracef("nok: should NOT be member of $_ but is");
+                    $state_ok = 0;
+                }
+            }
+        }
+        last unless $state_ok;
     }
 
     if ($undo_action eq 'undo') {
-        return [412, "Can't undo: group doesn't exist"]
+        return [412, "Can't undo: user doesn't exist or has changed groups"]
             unless $state_ok;
         return [304, "dry run"] if $dry_run;
         my $undo_data = $args{-undo_data};
-        my $res = _undo(\%args, $undo_data, 0, $unixg);
+        my $res = _undo(\%args, $undo_data, 0, $pu);
         if ($res->[0] == 200) {
             return [200, "OK", undef, {redo_data=>$res->[2]}];
         } else {
             return $res;
         }
     } elsif ($undo_action eq 'redo') {
-        return [412, "Can't redo: group already exists"]
+        return [412, "Can't redo: user already exists"]
             if $state_ok;
         return [304, "dry run"] if $dry_run;
         my $redo_data = $args{-redo_data};
-        my $res = _redo(\%args, $redo_data, 0, $unixg);
+        my $res = _redo(\%args, $redo_data, 0, $pu);
         if ($res->[0] == 200) {
             return [200, "OK", undef, {undo_data=>$res->[2]}];
         } else {
@@ -152,30 +205,79 @@ sub setup_unix_user {
     return [304, "Already ok"] if $state_ok;
     return [304, "dry run"] if $dry_run;
 
-    $log->debug("fix: creating Unix group $name ...");
+    if (!$exists) {
+        $log->trace("finding an unused UID ...");
+        my @uids = map {($pu->user($_))[1]} $pu->users;
+        $uid = $args{min_new_uid} // 1;
+        while (1) { last unless $uid ~~ @uids; $uid++ }
 
-    $log->trace("finding an unused GID ...");
-    my @gids = map {($unixg->group($_))[1]} $unixg->groups;
-    #$log->tracef("gids = %s", \@gids);
-    my $gid = $args{min_new_gid} // 1;
-    while (1) { last unless $gid ~~ @gids; $gid++ }
+        my @g = $pu->group($name);
+        if ($g[0]) {
+            $gid = $g[0];
+        } else {
+            $log->trace("fix: creating Unix group $name ...");
+            my %g_args = (
+                name => $name,
+                _passwd_path => $passwd_path,
+                _shadow_path => $shadow_path,
+                _group_path => $group_path,
+                _gshadow_path => $gshadow_path,
+                min_new_gid => $uid,
+            );
+            my $res = setup_unix_group(%g_args);
+            if ($res->[0] != 200) {
+                _undo(\%args, \@undo, 1, $pu);
+                return [500, "Can't create Unix group: $res->[0] - $res->[1]"];
+            } else {
+                $gid = $res->[2];
+                push @undo,
+                    ["undo_setup_group", \%g_args, $res->[3]{undo_data}];
+            }
+        }
 
-    $unixg->group($name, "x", $gid);
-    $unixg->commit;
-    push @undo, ["delete", $gid];
+        $log->debug("fix: creating Unix user $name ...");
+        $pu->user($name, $pu->encpass($new_password), $uid, $gid, $new_gecos,
+                  $new_home_dir, $new_shell);
+        if ($Passwd::Unix::Alt::errstr) {
+            _undo(\%args, \@undo, 1, $pu);
+            return [500, "Can't create Unix user: $Passwd::Unix::Alt::errstr"];
+        } else {
+            push @undo, ["delete", $new_password, $uid, $gid, $new_gecos,
+                         $new_home_dir, $new_shell];
+        }
+
+        $exists = 1;
+
+        if ($create_home_dir) {
+            $log->debug("fix: creating home dir ...");
+            # XXX
+
+            if ($use_skel_dir) {
+                $log->debug("fix: copying files from skeleton %s ...",
+                            $skel_dir);
+                # XXX
+            }
+        }
+
+    }
+
+    if (!$state_ok) {
+        $log->trace("fix: membership");
+        # XXX
+    }
 
     my $meta = {};
     $meta->{undo_data} = \@undo if $save_undo;
-    [200, "OK", {gid=>$gid}, $meta];
+    [200, "OK", {uid=>$uid, gid=>$gid}, $meta];
 }
 
 sub _undo_or_redo {
-    my ($which, $args, $undo_data, $is_rollback, $unixg) = @_;
+    my ($which, $args, $undo_data, $is_rollback, $pu) = @_;
     die "BUG: which must be undo or redo"
         unless $which && $which =~ /^(undo|redo)$/;
-    die "BUG: Unix::GroupFile object not supplied" unless $unixg;
+    die "BUG: Passwd::Unix::Alt object not supplied" unless $pu;
     return [200, "Nothing to do"] unless defined($undo_data);
-    die "BUG: Invalid undo data, must be arrayref"
+    die "BUG: Invalid $which data, must be arrayref"
         unless ref($undo_data) eq 'ARRAY';
 
     my $name = $args->{name};
@@ -190,13 +292,41 @@ sub _undo_or_redo {
         my ($cmd, @arg) = @$undo_step;
         my $err;
         if ($cmd eq 'delete') {
-            $unixg->delete($name);
-            $unixg->commit;
-            push @redo_data, ['create', $arg[0]];
+            $pu->del($name);
+            if ($Passwd::Unix::Alt::errstr) {
+                $err = $Passwd::Unix::Alt::errstr;
+            } else {
+                push @redo_data, ['create', @arg];
+            }
         } elsif ($cmd eq 'create') {
-            $unixg->group($name, "x", $arg[0]);
-            $unixg->commit;
-            push @redo_data, ['delete', $arg[0]];
+            $pu->user($name, $pu->encpass($arg[0]), @arg[1..5]);
+            push @redo_data, ['delete', @arg];
+        } elsif ($cmd =~ /^(undo_)?(setup_group|XXX)$/) {
+            my ($is_undo, $subname) = ($1, $2);
+            my $subref;
+            if ($subname eq 'setup_group') {
+                $subref = \&setup_unix_group;
+            }
+            if ($is_undo) {
+                my $res = $subref->(%{$arg[0]},
+                                    -undo_action => "undo",
+                                    -undo_data   => $arg[1]);
+                if ($res->[0] !~ /^(200|304|412)$/) {
+                    $err = "$res->[0] - $res->[1]";
+                } else {
+                    push @redo_data, [$subname, $arg[0], $res->[3]{redo_data}];
+                }
+            } else {
+                my $res = $subref->(%{$arg[0]},
+                                    -undo_action => "redo",
+                                    -redo_data   => $arg[1]);
+                if ($res->[0] !~ /^(200|304|412)$/) {
+                    $err = "$res->[0] - $res->[1]";
+                } else {
+                    push @redo_data, ["undo_$subname",
+                                      $arg[0], $res->[3]{redo_data}];
+                }
+            }
         } else {
             die "BUG: Invalid ${which}_step[$i], unknown command: $cmd";
         }
