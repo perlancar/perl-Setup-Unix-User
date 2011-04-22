@@ -273,6 +273,8 @@ sub setup_unix_user {
 
 sub _undo_or_redo {
     my ($which, $args, $undo_data, $is_rollback, $pu) = @_;
+    $log->tracef("Performing %s for setup_unix_user ...",
+                 $is_rollback ? "rollback" : "undo");
     die "BUG: which must be undo or redo"
         unless $which && $which =~ /^(undo|redo)$/;
     die "BUG: Passwd::Unix::Alt object not supplied" unless $pu;
