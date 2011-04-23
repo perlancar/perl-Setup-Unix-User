@@ -143,8 +143,11 @@ sub setup_unix_user {
     my @u              = $pu->user($name);
     my $exists         = @u ? 1:0;
     my $state_ok       = 1;
-    my $uid;
-    my $gid;
+    my ($uid, $gid);
+    my @membership;
+    my $member_of      = $args{member_of} // [];
+    push @$member_of, $name unless $name ~~ @$member_of;
+    my $not_member_of  = $args{not_member_of} // [];
     {
         if (!$exists) {
             $log->tracef("nok: unix user $name doesn't exist");
@@ -156,22 +159,16 @@ sub setup_unix_user {
         $gid = $u[2];
 
         my @membership = _get_user_membership($name, $pu);
-        my $member_of = $args{member_of} // [];
-        push @$member_of, $name unless $name ~~ @$member_of;
-        if ($member_of) {
-            for (@{ $args{member_of} }) {
-                unless ($_ ~~ @membership) {
-                    $log->tracef("nok: should be member of $_ but isn't");
-                    $state_ok = 0;
-                }
+        for (@$member_of) {
+            unless ($_ ~~ @membership) {
+                $log->tracef("nok: should be member of $_ but isn't");
+                $state_ok = 0;
             }
         }
-        if ($args{not_member_of}) {
-            for (@{ $args{not_member_of} }) {
-                if ($_ ~~ @membership) {
-                    $log->tracef("nok: should NOT be member of $_ but is");
-                    $state_ok = 0;
-                }
+        for (@$not_member_of) {
+            if ($_ ~~ @membership) {
+                $log->tracef("nok: should NOT be member of $_ but is");
+                $state_ok = 0;
             }
         }
         last unless $state_ok;
@@ -242,15 +239,16 @@ sub setup_unix_user {
         $pu->user($name, $pu->encpass($new_password), $uid, $gid, $new_gecos,
                   $new_home_dir, $new_shell);
         if ($Passwd::Unix::Alt::errstr) {
-            my $err = $Passwd::Unix::Alt::errstr; # avoid being reset by _undo
+            my $e = $Passwd::Unix::Alt::errstr; # avoid being reset by _undo
             _undo(\%args, \@undo, 1, $pu);
-            return [500, "Can't create Unix user: $err"];
+            return [500, "Can't create Unix user: $e"];
         } else {
             push @undo, ["delete", $new_password, $uid, $gid, $new_gecos,
                          $new_home_dir, $new_shell];
         }
 
         $exists = 1;
+        @membership = ($name);
 
         if ($create_home_dir) {
             $log->debugf("fix: creating home dir %s ...", $new_home_dir);
@@ -266,8 +264,50 @@ sub setup_unix_user {
     }
 
     if (!$state_ok) {
-        $log->trace("fix: membership");
-        # XXX
+        $log->tracef("fix: membership (current membership: %s, ".
+                         "must be member of: %s, must not be member of: %s)",
+                     \@membership, $member_of, $not_member_of
+                 );
+        for my $i (@$member_of) {
+            my @g = $pu->group($i);
+            unless ($g[0]) {
+                $log->warn("group $i doesn't exist, skipped");
+                next;
+            }
+            unless ($i ~~ @membership) {
+                $log->trace("fix: adding $name to group $i ...");
+                unless ($name ~~ @{$g[1]}) {
+                    push @{$g[1]}, $name;
+                    $pu->group($i, $g[0], $g[1]);
+                    if ($Passwd::Unix::Alt::errstr) {
+                        my $e = $Passwd::Unix::Alt::errstr;
+                        _undo(\%args, \@undo, 1, $pu);
+                        return [500, "Can't add user to group $i: $e"];
+                    }
+                    push @undo, ["rm_from_group", $i];
+                }
+            }
+        }
+        for my $i (@$not_member_of) {
+            my @g = $pu->group($i);
+            unless ($g[0]) {
+                $log->warn("group $i doesn't exist, skipped");
+                next;
+            }
+            if ($i ~~ @membership) {
+                $log->trace("fix: removing $name from group $i ...");
+                if ($name ~~ @{$g[1]}) {
+                    $g[1] = [grep {$_ ne $name} @{$g[1]}];
+                    $pu->group($i, $g[0], $g[1]);
+                    if ($Passwd::Unix::Alt::errstr) {
+                        my $e = $Passwd::Unix::Alt::errstr;
+                        _undo(\%args, \@undo, 1, $pu);
+                        return [500, "Can't remove user from group $i: $e"];
+                    }
+                    push @undo, ["add_to_group", $i];
+                }
+            }
+        }
     }
 
     my $meta = {};

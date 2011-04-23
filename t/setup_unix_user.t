@@ -30,14 +30,16 @@ test_setup_unix_user(
         is($res->[2]{gid}, 3, "gid");
     },
 );
+my %args = (
+    name=>"u4", min_new_uid=>1000, new_password=>"123", new_gecos=>"user 4",
+    new_home_dir=>"$tmp_dir/home", new_home_dir_mode=>0750,
+    new_shell=>"/bin/shell", member_of=>["bin", "test"],
+    skel_dir=>["$tmp_dir/skel"],
+);
 test_setup_unix_user(
     name       => "create (with undo, min_new_uid, new_password, new_gecos, ".
         "new_home_dir, new_home_dir_mode, new_shell, member_of)",
-    args       => {name=>"u4", min_new_uid=>1000, new_password=>"123",
-                   new_gecos=>"user 4", new_home_dir=>"$tmp_dir/home",
-                   new_home_dir_mode=>0750, new_shell=>"/bin/shell",
-                   member_of=>["u1", "u2"], not_member_of=>["bin"],
-                   skel_dir=>["$tmp_dir/skel"],
+    args       => {%args,
                    -undo_action=>"do"},
     status     => 200,
     is_file    => 1,
@@ -53,25 +55,26 @@ test_setup_unix_user(
         is($u[4], "$tmp_dir/home", "new_home_dir");
         is($u[5], "/bin/shell", "new_shell");
         # XXX test new_home_dir_mode
-        # XXX test member_of: u1, u2, u4
+        my @g;
+        @g = $pu->group("u4");
+        ok($g[0] && "u4" ~~ @{$g[1]}, "user is member of u4")
+            or diag explain $g[1];
+        @g = $pu->group("bin");
+        ok($g[0] && "u4" ~~ @{$g[1]}, "user is member of bin")
+            or diag explain $g[1];
         # XXX test skel
     },
 );
+goto DONE_TESTING;
 test_setup_unix_user(
     name       => "create (undo, dry_run)",
-    args       => {name=>"u4", min_new_uid=>1000, new_password=>"123",
-                   new_gecos=>"user 4", new_home_dir=>"$tmp_dir/home",
-                   new_home_dir_mode=>0750, new_shell=>"/bin/shell",
-                   member_of=>["u1", "u2"], not_member_of=>["bin"],
-                   skel_dir=>["$tmp_dir/skel"],
-                   -dry_run=>1,
+    args       => {%args, -dry_run=>1,
                    -undo_action=>"undo", -undo_data=>$undo_data},
     status     => 304,
 );
-goto DONE_TESTING;
 test_setup_unix_user(
     name       => "create (undo)",
-    args       => {name=>"g2",
+    args       => {%args,
                    -undo_action=>"undo", -undo_data=>$undo_data},
     status     => 200,
     exists     => 0,
@@ -85,14 +88,14 @@ test_setup_unix_user(
 );
 test_setup_unix_user(
     name       => "create (redo, dry_run)",
-    args       => {name=>"g2", -dry_run=>1,
+    args       => {%args,
                    -undo_action=>"redo", -redo_data=>$redo_data},
     status     => 304,
     exists     => 0,
 );
 test_setup_unix_user(
     name       => "create (redo)",
-    args       => {name=>"g2",
+    args       => {%args,
                    -undo_action=>"redo", -redo_data=>$redo_data},
     status     => 200,
     exists     => 1,
@@ -102,6 +105,8 @@ test_setup_unix_user(
         ok($undo_data, "there is undo data");
     },
 );
+
+# XXX test not_member_of bin
 
 # XXX test: can't redo because uid is occupied
 
