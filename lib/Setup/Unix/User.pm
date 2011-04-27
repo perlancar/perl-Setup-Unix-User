@@ -392,3 +392,56 @@ sub _undo { _undo_or_redo('undo', @_) }
 sub _redo { _undo_or_redo('redo', @_) }
 
 1;
+__END__
+
+=head1 SYNOPSIS
+
+ use Setup::Unix::User 'setup_unix_user';
+
+ # simple usage (doesn't save undo data)
+ my $res = setup_unix_user name => 'foo',
+                           members_of => ['admin', 'wheel'];
+ die unless $res->[0] == 200 || $res->[0] == 304;
+
+ # perform setup and save undo data (undo data should be serializable)
+ $res = setup_unix_user ..., -undo_action => 'do';
+ die unless $res->[0] == 200 || $res->[0] == 304;
+ my $undo_data = $res->[3]{undo_data};
+
+ # perform undo
+ $res = setup_unix_user ..., -undo_action => "undo", -undo_data=>$undo_data;
+ die unless $res->[0] == 200 || $res->[0] == 304;
+
+
+=head1 DESCRIPTION
+
+This module provides one function: B<setup_unix_user>.
+
+This module is part of the Setup modules family.
+
+This module uses L<Log::Any> logging framework.
+
+This module's functions have L<Sub::Spec> specs.
+
+
+=head1 THE SETUP MODULES FAMILY
+
+I use the C<Setup::> namespace for the Setup modules family, typically used in
+installers (or other applications). See L<Setup::File::Symlink> for more details
+about the Setup modules family.
+
+
+=head1 FUNCTIONS
+
+None are exported by default, but they are exportable.
+
+
+=head1 SEE ALSO
+
+L<Setup::Unix::Group>.
+
+L<Sub::Spec>, specifically L<Sub::Spec::Clause::features> on dry-run/undo.
+
+Other modules in Setup:: namespace.
+
+=cut
