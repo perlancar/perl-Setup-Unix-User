@@ -42,7 +42,6 @@ test_setup_unix_user(
     args       => {%args,
                    -undo_action=>"do"},
     status     => 200,
-    is_file    => 1,
     posttest   => sub {
         my ($res, $name, $pu) = @_;
         $undo_data = $res->[3]{undo_data};
@@ -121,17 +120,55 @@ test_setup_unix_user(
     },
 );
 
-# XXX test redo
+$args{member_of} = ["u2"];
+$args{not_member_of} = ["bin"];
+
+test_setup_unix_user(
+    name       => "fix membership (with undo)",
+    args       => {%args,
+                   -undo_action=>"do"},
+    status     => 200,
+    posttest   => sub {
+        my ($res, $name, $pu) = @_;
+        $undo_data = $res->[3]{undo_data};
+        my @g;
+        @g = $pu->group("u4");
+        ok($g[0] && "u4" ~~ @{$g[1]}, "user is member of u4")
+            or diag explain $g[1];
+        @g = $pu->group("u2");
+        ok($g[0] && "u4" ~~ @{$g[1]}, "user is member of u2")
+            or diag explain $g[1];
+        @g = $pu->group("bin");
+        ok($g[0] && !("u4" ~~ @{$g[1]}), "user is not member of bin")
+            or diag explain $g[1];
+    },
+);
+test_setup_unix_user(
+    name       => "fix membership (with undo)",
+    args       => {%args,
+                   -undo_action=>"undo", -undo_data=>$undo_data},
+    status     => 200,
+    posttest   => sub {
+        my ($res, $name, $pu) = @_;
+        $redo_data = $res->[3]{undo_data};
+        my @g;
+        @g = $pu->group("u4");
+        ok($g[0] && "u4" ~~ @{$g[1]}, "user is member of u4")
+            or diag explain $g[1];
+        @g = $pu->group("u2");
+        ok($g[0] && !("u4" ~~ @{$g[1]}), "user is not member of u2")
+            or diag explain $g[1];
+        @g = $pu->group("bin");
+        ok($g[0] && "u4" ~~ @{$g[1]}, "user is member of bin")
+            or diag explain $g[1];
+    },
+);
 
 # XXX test changed state between do -> redo
-
-# XXX test already exist, fix membership
 
 # XXX test rollback
 
 # XXX test failure during rollback (dies)
-
-# XXX test not_member_of bin
 
 DONE_TESTING:
 teardown();

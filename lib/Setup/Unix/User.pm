@@ -389,7 +389,7 @@ sub setup_unix_user {
             }
             $log->trace("Adding $name to group $gi ...");
             push @{$g[1]}, $name;
-            $pu->group($i, $g[0], $g[1]);
+            $pu->group($gi, $g[0], $g[1]);
             if ($Passwd::Unix::Alt::errstr) {
                 $err = "Can't add user to group $gi: ".
                     $Passwd::Unix::Alt::errstr;
