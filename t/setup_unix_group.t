@@ -17,7 +17,7 @@ setup();
 test_setup_unix_group(
     name       => "create (dry run)",
     args       => {name=>"g1", -dry_run=>1},
-    status     => 304,
+    status     => 200,
     exists     => 0,
 );
 test_setup_unix_group(
@@ -38,14 +38,14 @@ test_setup_unix_group(
         my $res = shift;
         $undo_data = $res->[3]{undo_data};
         ok($undo_data, "there is undo data");
-        is($res->[2]{gid}, 1002, "gid");
+        is($res->[2]{gid}, 1001, "gid");
     },
 );
 test_setup_unix_group(
     name       => "create (undo, dry_run)",
     args       => {name=>"g2", -dry_run=>1,
                    -undo_action=>"undo", -undo_data=>$undo_data},
-    status     => 304,
+    status     => 200,
 );
 test_setup_unix_group(
     name       => "create (undo)",
@@ -55,21 +55,20 @@ test_setup_unix_group(
     exists     => 0,
     posttest   => sub {
         my $res = shift;
-        $redo_data = $res->[3]{redo_data};
-        ok($redo_data, "there is redo data");
+        $redo_data = $res->[3]{undo_data};
     },
 );
 test_setup_unix_group(
     name       => "create (redo, dry_run)",
     args       => {name=>"g2", -dry_run=>1,
-                   -undo_action=>"redo", -redo_data=>$redo_data},
-    status     => 304,
+                   -undo_action=>"undo", -undo_data=>$redo_data},
+    status     => 200,
     exists     => 0,
 );
 test_setup_unix_group(
     name       => "create (redo)",
     args       => {name=>"g2",
-                   -undo_action=>"redo", -redo_data=>$redo_data},
+                   -undo_action=>"undo", -undo_data=>$redo_data},
     status     => 200,
     exists     => 1,
     posttest   => sub {

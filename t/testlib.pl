@@ -61,8 +61,8 @@ _
 
     # setup skeleton
     mkdir("$::tmp_dir/skel");
-    mkdir("$::tmp_dir/skel/dir1");
-    write_file("$::tmp_dir/skel/dir1/.file1", "file 1");
+    mkdir("$::tmp_dir/skel/.dir1");
+    write_file("$::tmp_dir/skel/.dir1/.file1", "file 1");
     write_file("$::tmp_dir/skel/.file2", "file 2");
 
     diag "tmp dir = $::tmp_dir";

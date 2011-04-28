@@ -20,8 +20,7 @@ $SPEC{setup_unix_group} = {
 
 On do, will create Unix group if not already exists.
 
-On undo, will delete Unix group previously created. On redo, will recreate Unix
-group with the same GID.
+On undo, will delete Unix group previously created.
 
 _
     args => {
@@ -46,7 +45,7 @@ sub setup_unix_group {
     $name or return [400, "Please specify name"];
     $name =~ /^[A-Za-z0-9_-]+$/ or return [400, "Invalid group name syntax"];
 
-    # create object
+    # create PUA object
     my $passwd_path  = $args{_passwd_path}  // "/etc/passwd";
     my $group_path   = $args{_group_path}   // "/etc/group";
     my $shadow_path  = $args{_shadow_path}  // "/etc/shadow";
@@ -59,120 +58,112 @@ sub setup_unix_group {
         warnings => 0,
     );
 
-    # check current state
-    my @g              = $pu->group($name);
-    return [500, "Can't get Unix group: $Passwd::Unix::Alt::errstr"]
-        if $Passwd::Unix::Alt::errstr &&
-            $Passwd::Unix::Alt::errstr !~ /unknown group/i;
-    my $exists         = $g[0] ? 1:0;
-    my $state_ok       = 1;
-    if (!$exists) {
-        $log->tracef("nok: unix group $name doesn't exist");
-        $state_ok = 0;
+    my $gid;
+
+    # collect steps
+    my $steps;
+    if ($undo_action eq 'undo') {
+        $steps = $args{-undo_data} or return [400, "Please supply -undo_data"];
+    } else {
+        $steps = [];
+        {
+            my @g = $pu->group($name);
+            return [500, "Can't get Unix group: $Passwd::Unix::Alt::errstr"]
+                if $Passwd::Unix::Alt::errstr &&
+                    $Passwd::Unix::Alt::errstr !~ /unknown group/i;
+            if (!$g[0]) {
+                $log->tracef("nok: unix group $name doesn't exist");
+                push @$steps, ["create"];
+                last;
+            }
+        }
     }
 
-    if ($undo_action eq 'undo') {
-        return [412, "Can't undo: group doesn't exist"]
-            unless $state_ok;
-        return [304, "dry run"] if $dry_run;
-        my $undo_data = $args{-undo_data};
-        my $res = _undo(\%args, $undo_data, 0, $pu);
-        if ($res->[0] == 200) {
-            return [200, "OK", undef, {redo_data=>$res->[2]}];
-        } else {
-            return $res;
-        }
-    } elsif ($undo_action eq 'redo') {
-        return [412, "Can't redo: group already exists"]
-            if $state_ok;
-        return [304, "dry run"] if $dry_run;
-        my $redo_data = $args{-redo_data};
-        my $res = _redo(\%args, $redo_data, 0, $pu);
-        if ($res->[0] == 200) {
-            return [200, "OK", undef, {undo_data=>$res->[2]}];
-        } else {
-            return $res;
-        }
-    }
+    return [400, "Invalid steps, must be an array"]
+        unless $steps && ref($steps) eq 'ARRAY';
+    return [200, "Dry run"] if $dry_run && @$steps;
 
     my $save_undo = $undo_action ? 1:0;
-    my @undo;
-    return [304, "Already ok"] if $state_ok;
-    return [304, "dry run"] if $dry_run;
 
-    $log->debug("fix: creating Unix group $name ...");
-
-    $log->trace("finding an unused GID ...");
-    my @gids = map {($pu->group($_))[0]} $pu->groups;
-    #$log->tracef("gids = %s", \@gids);
-    my $gid = $args{min_new_gid} // 1;
-    while (1) { last unless $gid ~~ @gids; $gid++ }
-
-    $pu->group($name, $gid, []);
-    if ($Passwd::Unix::Alt::errstr) {
-        _undo(\%args, \@undo, 1, $pu);
-        return [500, "Can't add group to $group_path: ".
-                    "$Passwd::Unix::Alt::errstr"];
-    }
-    push @undo, ["delete", $gid];
-
-    my $meta = {};
-    $meta->{undo_data} = \@undo if $save_undo;
-    [200, "OK", {gid=>$gid}, $meta];
-}
-
-sub _undo_or_redo {
-    my ($which, $args, $undo_data, $is_rollback, $pu) = @_;
-    die "BUG: which must be undo or redo"
-        unless $which && $which =~ /^(undo|redo)$/;
-    die "BUG: Passwd::Unix::Alt object not supplied" unless $pu;
-    return [200, "Nothing to do"] unless defined($undo_data);
-    die "BUG: Invalid $which data, must be arrayref"
-        unless ref($undo_data) eq 'ARRAY';
-
-    my $name = $args->{name};
-
-    my $i = 0;
-    my @redo_data;
-    for my $undo_step (reverse @$undo_data) {
-        $log->tracef("${which}[%d of 0..%d]: %s",
-                     $i, scalar(@$undo_data)-1, $undo_step);
-        die "BUG: Invalid ${which}_step[$i], must be arrayref"
-            unless ref($undo_step) eq 'ARRAY';
-        my ($cmd, @arg) = @$undo_step;
+    # perform the steps
+    my $rollback;
+    my $undo_steps = [];
+  STEP:
+    for my $i (0..@$steps-1) {
+        my $step = $steps->[$i];
+        next unless defined $step; # can happen even when steps=[], due to redo
+        $log->tracef("step %d of 0..%d: %s", $i, @$steps-1, $step);
         my $err;
-        if ($cmd eq 'delete') {
+        return [400, "Invalid step (not array)"] unless ref($step) eq 'ARRAY';
+
+        my @g = $pu->group($name);
+        if ($Passwd::Unix::Alt::errstr &&
+                $Passwd::Unix::Alt::errstr !~ /unknown group/i) {
+            $err = "Can't check group entry: $Passwd::Unix::Alt::errstr";
+            goto CHECK_ERR;
+        }
+        if ($step->[0] eq 'create') {
+            $gid = $step->[1];
+            if ($g[0]) {
+                if (!defined($gid)) {
+                    # group already exists, skip step
+                    next STEP;
+                } elsif ($gid ne $g[0]) {
+                    $err = "Group already exists but with different GID $g[0]".
+                        " (we need to create GID $g[0])";
+                }
+            } else {
+                if (!defined($gid)) {
+                    $log->trace("finding an unused GID ...");
+                    my @gids = map {($pu->group($_))[0]} $pu->groups;
+                    #$log->tracef("gids = %s", \@gids);
+                    $gid = $args{min_new_gid} // 1;
+                    while (1) { last unless $gid ~~ @gids; $gid++ }
+                    $log->tracef("found unused GID: %d", $gid);
+                }
+                $pu->group($name, $gid, []);
+                if ($Passwd::Unix::Alt::errstr) {
+                    $err = "Can't add group entry in $group_path: ".
+                        "$Passwd::Unix::Alt::errstr";
+                } else {
+                    unshift @$undo_steps, ["delete", $gid];
+                }
+            }
+        } elsif ($step->[0] eq 'delete') {
+            if (!$g[0]) {
+                # group doesn't exist, skip this step
+                next STEP;
+            }
             $pu->del_group($name);
             if ($Passwd::Unix::Alt::errstr) {
                 $err = $Passwd::Unix::Alt::errstr;
             } else {
-                push @redo_data, ['create', $arg[0]];
-            }
-        } elsif ($cmd eq 'create') {
-            $pu->group($name, $arg[0], []);
-            if ($Passwd::Unix::Alt::errstr) {
-                $err = $Passwd::Unix::Alt::errstr;
-            } else {
-                push @redo_data, ['delete', $arg[0]];
+                unshift @$undo_steps, ['create', $gid];
             }
         } else {
-            die "BUG: Invalid ${which}_step[$i], unknown command: $cmd";
+            die "BUG: Unknown step command: $step->[0]";
         }
+      CHECK_ERR:
         if ($err) {
-            if ($is_rollback) {
-                die "Can't rollback ${which} step[$i] ($cmd): $err";
+            if ($rollback) {
+                die "Failed rollback step $i of 0..".(@$steps-1).": $err";
             } else {
-                return [500, "Can't ${which} step[$i] ($cmd): $err"];
+                $log->tracef("Step failed: $err, performing rollback (%s)...",
+                             $undo_steps);
+                $rollback = $err;
+                $steps = $undo_steps;
+                goto STEP; # perform steps all over again
             }
         }
-        $i++;
     }
-    [200, "OK", \@redo_data];
+    return [500, "Error (rollbacked): $rollback"] if $rollback;
+
+    my $data = {gid=>$gid};
+    my $meta = {};
+    $meta->{undo_data} = $undo_steps if $save_undo;
+    $log->tracef("meta: %s", $meta);
+    return [@$steps ? 200 : 304, @$steps ? "OK" : "Nothing done", $data, $meta];
 }
-
-sub _undo { _undo_or_redo('undo', @_) }
-sub _redo { _undo_or_redo('redo', @_) }
-
 1;
 __END__
 
