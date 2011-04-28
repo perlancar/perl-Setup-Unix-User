@@ -443,7 +443,13 @@ sub setup_unix_user {
             } elsif ($res->[0] == 304) {
                 # nothing was done, success, no undo
             } else {
-                $err = "Error result from $f: $res->[0] - $res->[1]";
+                # ignore setup_dir errors
+                if ($f eq 'setup_dir') {
+                    $log->warn("Can't successfully run $step->[0]: ".
+                                   "$res->[0] - $res->[1], ignored");
+                } else {
+                    $err = "Error result from $f: $res->[0] - $res->[1]";
+                }
             }
 
         } else {

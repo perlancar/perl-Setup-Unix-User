@@ -109,7 +109,6 @@ test_setup_unix_user(
     args       => {%args,
                    -undo_action=>"undo", -undo_data=>$redo_data},
     status     => 200,
-    exists     => 1,
     posttest   => sub {
         my ($res, $name, $pu) = @_;
         my @u = $pu->user($name);
@@ -164,7 +163,38 @@ test_setup_unix_user(
     },
 );
 
-# XXX test changed state between do -> redo
+%args = (
+    name=>"u5", new_home_dir=>"$tmp_dir/u5", member_of=>["bin"],
+    skel_dir=>"$tmp_dir/skel",
+);
+test_setup_unix_user(
+    name       => "changed state between do & undo: do",
+    args       => {%args,
+                   -undo_action=>"do"},
+    status     => 200,
+    posttest   => sub {
+        my ($res, $name, $pu) = @_;
+        $undo_data = $res->[3]{undo_data};
+    },
+);
+write_file("$tmp_dir/u5/x", "test");   # file added to user's home
+unlink "$tmp_dir/u5/.file2";           # file removed
+write_file("$tmp_dir/u5/.file3", "x"); # file modified
+test_setup_unix_user(
+    name       => "changed state between do & undo: undo",
+    args       => {%args,
+                   -undo_action=>"undo", -undo_data=>$undo_data},
+    status     => 200,
+    exists     => 0,
+    posttest   => sub {
+        my ($res, $name, $pu) = @_;
+        $redo_data = $res->[3]{undo_data};
+        ok((-d "$tmp_dir/u5"), "homedir not removed because not empty");
+        ok((-f "$tmp_dir/u5/x"), "file added by us not removed");
+        ok(!(-e "$tmp_dir/u5/.dir1"), "file added by do removed");
+        ok((-f "$tmp_dir/u5/.file3"), "file modified by us not removed");
+    },
+);
 
 # XXX test rollback
 
