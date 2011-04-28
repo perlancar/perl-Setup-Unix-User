@@ -488,7 +488,7 @@ __END__
 
  # simple usage (doesn't save undo data)
  my $res = setup_unix_user name => 'foo',
-                           members_of => ['admin', 'wheel'];
+                           member_of => ['admin', 'wheel'];
  die unless $res->[0] == 200 || $res->[0] == 304;
 
  # perform setup and save undo data (undo data should be serializable)
