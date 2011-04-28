@@ -207,9 +207,9 @@ This module's functions have L<Sub::Spec> specs.
 
 =head1 THE SETUP MODULES FAMILY
 
-I use the C<Setup::> namespace for the Setup modules family, typically used in
-installers (or other applications). See L<Setup::File::Symlink> for more details
-about the Setup modules family.
+I use the C<Setup::> namespace for the Setup modules family. See C<Setup::File>
+for more details on the goals, characteristics, and implementation of Setup
+modules family.
 
 
 =head1 FUNCTIONS
@@ -220,8 +220,6 @@ None are exported by default, but they are exportable.
 =head1 SEE ALSO
 
 L<Setup::Unix::User>.
-
-L<Sub::Spec>, specifically L<Sub::Spec::Clause::features> on dry-run/undo.
 
 Other modules in Setup:: namespace.
 
