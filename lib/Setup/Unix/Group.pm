@@ -93,7 +93,6 @@ sub setup_unix_group {
   STEP:
     for my $i (0..@$steps-1) {
         my $step = $steps->[$i];
-        next unless defined $step; # can happen even when steps=[], due to redo
         $log->tracef("step %d of 0..%d: %s", $i, @$steps-1, $step);
         my $err;
         return [400, "Invalid step (not array)"] unless ref($step) eq 'ARRAY';
