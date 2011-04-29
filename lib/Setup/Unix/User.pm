@@ -1,5 +1,5 @@
 package Setup::Unix::User;
-# ABSTRACT: Ensure existence of Unix user and its group memberships
+# ABSTRACT: Setup Unix user (existence, group memberships)
 
 use 5.010;
 use strict;
@@ -35,19 +35,15 @@ sub _rand_pass {
 }
 
 $SPEC{setup_unix_user} = {
-    summary  => "Ensure existence of Unix user and its group memberships",
+    summary  => "Setup Unix user (existence, group memberships)",
     description => <<'_',
 
-On do, will create Unix user if not already exists.
+On do, will create Unix user if not already exists. And also make sure user
+belong to specified groups (and not belong to unwanted groups).
 
-Newly created user's group memberships, homedir and skeleton files can also be
-created/copied automatically by this routine (utilizing Setup::Dir and
-Setup::File).
-
-On undo, will delete Unix user previously created (and/or remove/readd groups to
-original state, remove homedirs, etc).
-
-On redo, will recreate Unix user (and re-set memberships) with the same UID.
+On undo, will delete Unix user (along with its initially created home dir and
+files) if it was created by this function. Also will restore old group
+memberships.
 
 _
     args => {

@@ -1,5 +1,5 @@
 package Setup::Unix::Group;
-# ABSTRACT: Make sure a Unix group exists
+# ABSTRACT: Setup Unix group (existence)
 
 use 5.010;
 use strict;
@@ -15,12 +15,14 @@ use Passwd::Unix::Alt;
 our %SPEC;
 
 $SPEC{setup_unix_group} = {
-    summary  => "Makes sure a Unix group exists",
+    summary  => "Setup Unix group (existence)",
     description => <<'_',
 
 On do, will create Unix group if not already exists.
 
 On undo, will delete Unix group previously created.
+
+On redo, will recreate the Unix group with the same GID.
 
 _
     args => {
