@@ -38,7 +38,6 @@ _
 };
 sub setup_unix_group {
     my %args           = @_;
-    $log->tracef("=> setup_unix_group(%s)", \%args);
     my $dry_run        = $args{-dry_run};
     my $undo_action    = $args{-undo_action} // "";
 

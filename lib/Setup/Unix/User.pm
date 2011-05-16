@@ -108,7 +108,6 @@ _
 };
 sub setup_unix_user {
     my %args           = @_;
-    $log->tracef("=> setup_unix_user(%s)", \%args); # TMP
     my $dry_run        = $args{-dry_run};
     my $undo_action    = $args{-undo_action} // "";
 
