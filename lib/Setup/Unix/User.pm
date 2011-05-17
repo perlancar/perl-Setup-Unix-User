@@ -50,6 +50,16 @@ _
         name => ['str*' => {
             summary => 'User name',
         }],
+        should_already_exist => ['bool' => {
+            summary => 'If set to true, require that user already exists',
+            description => <<'_',
+
+This can be used to fix user membership, but does not create user when it
+doesn't exist.
+
+_
+            default => 0,
+        }],
         member_of => ['array' => {
             summary => 'List of Unix group names that the user must be '.
                 'member of',
@@ -172,6 +182,8 @@ sub setup_unix_user {
             my @u = $pu->user($name);
             if (!@u) {
                 $log->tracef("nok: unix user $name doesn't exist");
+                return [412, "user must already exist"]
+                    if $args{should_already_exist};
                 push @$steps, ["create", "fix_membership", ""];
                 last;
             }
