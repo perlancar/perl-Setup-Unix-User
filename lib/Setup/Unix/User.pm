@@ -69,6 +69,22 @@ _
                 'member of',
             of => 'str*',
         }],
+        min_new_uid => ['str' => {
+            summary => 'Set minimum UID when creating new user',
+            default => 1,
+        }],
+        max_new_uid => ['str' => {
+            summary => 'Set maximum UID when creating new user',
+            default => 65535,
+        }],
+        min_new_gid => ['str' => {
+            summary => 'Set minimum GID when creating new group',
+            description => 'Default is UID',
+        }],
+        max_new_gid => ['str' => {
+            summary => 'Set maximum GID when creating new group',
+            description => 'Default follows max_new_uid',
+        }],
         new_password => ['str' => {
             summary => 'Set password when creating new user',
             description => 'Default is a random password',
@@ -223,14 +239,31 @@ sub setup_unix_user {
                 # user already exists with correct uid/gid, skip this step
                 next STEP;
             }
-            if (!defined($uid)) {
+            my $found = defined($uid);
+            my $minuid = $args{min_new_uid} // 1;
+            my $maxuid = $args{max_new_uid} // 65535;
+            if (!$found) {
                 $log->trace("finding an unused UID ...");
                 my @uids = map {($pu->user($_))[1]} $pu->users;
-                $uid = $args{min_new_uid} // 1;
-                while (1) { last unless $uid ~~ @uids; $uid++ }
-                $log->tracef("found unused UID: %d", $uid);
+                $uid = $minuid;
+                while (1) {
+                    last if $uid > $maxuid;
+                    unless ($uid ~~ @uids) {
+                        $log->tracef("found unused UID: %d", $uid);
+                        $found++;
+                        last;
+                    }
+                    $uid++;
+                }
             }
-            if (!defined($gid)) {
+            if (!$found) {
+                $err = "Can't find unused UID";
+                goto CHECK_ERR;
+            }
+            $found = defined($gid);
+            my $mingid = $args{min_new_gid} // $uid;
+            my $maxgid = $args{max_new_gid} // $maxuid;
+            if (!$found) {
                 my @g = $pu->group($name);
                 if ($g[0]) {
                     $gid = $g[0];
@@ -242,7 +275,8 @@ sub setup_unix_user {
                         _shadow_path  => $shadow_path,
                         _group_path   => $group_path,
                         _gshadow_path => $gshadow_path,
-                        min_new_gid   => $uid,
+                        min_new_gid   => $mingid,
+                        max_new_gid   => $maxgid,
                     );
                     my $res = setup_unix_group(
                         %s_args, -undo_action => $save_undo ? 'do' : undef);

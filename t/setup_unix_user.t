@@ -121,6 +121,18 @@ test_setup_unix_user(
     },
 );
 
+# at this point, users: u1=1000, u2=1001, u3=3, u4=1002
+my %args2 = (
+    name=>"u5", min_new_uid=>1000, max_new_uid=>1002,
+    skel_dir=>"$tmp_dir/skel",
+);
+test_setup_unix_user(
+    name       => "create (min_new_uid, max_new_uid, fail)",
+    args       => {%args2},
+    status     => 500,
+    exists     => 0,
+);
+
 $args{member_of} = ["u2"];
 $args{not_member_of} = ["bin"];
 
