@@ -117,10 +117,8 @@ sub setup_unix_group {
                         " (we need to create GID $g[0])";
                 }
             } else {
-                my $found;
-                if (defined($gid)) {
-                    $found++;
-                } else {
+                my $found = defined($gid);
+                if (!$found) {
                     $log->trace("finding an unused GID ...");
                     my @gids = map {($pu->group($_))[0]} $pu->groups;
                     #$log->tracef("gids = %s", \@gids);
@@ -128,21 +126,24 @@ sub setup_unix_group {
                     my $max = $args{max_new_gid} // 65535;
                     while (1) {
                         last if $gid > $max;
-                        do { $found++; last } unless $gid ~~ @gids;
+                        unless ($gid ~~ @gids) {
+                            $log->tracef("found unused GID: %d", $gid);
+                            $found++;
+                            last;
+                        }
                         $gid++;
                     }
-                    $log->tracef("found unused GID: %d", $gid) if $found;
                 }
-                if ($found) {
-                    $pu->group($name, $gid, []);
-                    if ($Passwd::Unix::Alt::errstr) {
-                        $err = "Can't add group entry in $group_path: ".
-                            "$Passwd::Unix::Alt::errstr";
-                    } else {
-                        unshift @$undo_steps, ["delete", $gid];
-                    }
-                } else {
+                if (!$found) {
                     $err = "Can't find unused GID";
+                    goto CHECK_ERR;
+                }
+                $pu->group($name, $gid, []);
+                if ($Passwd::Unix::Alt::errstr) {
+                    $err = "Can't add group entry in $group_path: ".
+                        "$Passwd::Unix::Alt::errstr";
+                } else {
+                    unshift @$undo_steps, ["delete", $gid];
                 }
             }
         } elsif ($step->[0] eq 'delete') {
