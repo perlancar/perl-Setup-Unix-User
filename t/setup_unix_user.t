@@ -113,7 +113,9 @@ test_setup_unix_user(
         my ($res, $name, $pu) = @_;
         my @u = $pu->user($name);
         ok($u[0], "user recreated");
-        #ok(XXX, "user recreated with same uid"); # needs some setup
+        is($u[1], 1002, "user recreated with same uid");
+        my @g = $pu->group($name);
+        is($g[0], 1003, "group recreated with same gid");
         ok((-d "$tmp_dir/home"), "home dir recreated");
         ok((-f "$tmp_dir/home/.dir1/.file1"), "skel file recreated");
     },
