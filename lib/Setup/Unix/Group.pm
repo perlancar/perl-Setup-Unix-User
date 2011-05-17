@@ -33,6 +33,10 @@ _
             summary => 'When creating new group, specify minimum GID',
             default => 1,
         }],
+        min_new_gid => ['int' => {
+            summary => 'When creating new group, specify maximum GID',
+            default => 65535,
+        }],
     },
     features => {undo=>1, dry_run=>1},
 };
@@ -113,20 +117,32 @@ sub setup_unix_group {
                         " (we need to create GID $g[0])";
                 }
             } else {
-                if (!defined($gid)) {
+                my $found;
+                if (defined($gid)) {
+                    $found++;
+                } else {
                     $log->trace("finding an unused GID ...");
                     my @gids = map {($pu->group($_))[0]} $pu->groups;
                     #$log->tracef("gids = %s", \@gids);
                     $gid = $args{min_new_gid} // 1;
-                    while (1) { last unless $gid ~~ @gids; $gid++ }
-                    $log->tracef("found unused GID: %d", $gid);
+                    my $max = $args{max_new_gid} // 65535;
+                    while (1) {
+                        last if $gid > $max;
+                        do { $found++; last } unless $gid ~~ @gids;
+                        $gid++;
+                    }
+                    $log->tracef("found unused GID: %d", $gid) if $found;
                 }
-                $pu->group($name, $gid, []);
-                if ($Passwd::Unix::Alt::errstr) {
-                    $err = "Can't add group entry in $group_path: ".
-                        "$Passwd::Unix::Alt::errstr";
+                if ($found) {
+                    $pu->group($name, $gid, []);
+                    if ($Passwd::Unix::Alt::errstr) {
+                        $err = "Can't add group entry in $group_path: ".
+                            "$Passwd::Unix::Alt::errstr";
+                    } else {
+                        unshift @$undo_steps, ["delete", $gid];
+                    }
                 } else {
-                    unshift @$undo_steps, ["delete", $gid];
+                    $err = "Can't find unused GID";
                 }
             }
         } elsif ($step->[0] eq 'delete') {
@@ -138,7 +154,7 @@ sub setup_unix_group {
             if ($Passwd::Unix::Alt::errstr) {
                 $err = $Passwd::Unix::Alt::errstr;
             } else {
-                unshift @$undo_steps, ['create', $gid];
+                unshift @$undo_steps, ['create', $g[0]];
             }
         } else {
             die "BUG: Unknown step command: $step->[0]";
