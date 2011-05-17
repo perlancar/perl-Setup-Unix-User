@@ -31,11 +31,11 @@ _
         }],
         min_new_gid => ['int' => {
             summary => 'When creating new group, specify minimum GID',
-            default => 1,
+            default => 0,
         }],
         min_new_gid => ['int' => {
             summary => 'When creating new group, specify maximum GID',
-            default => 65535,
+            default => 65534,
         }],
     },
     features => {undo=>1, dry_run=>1},

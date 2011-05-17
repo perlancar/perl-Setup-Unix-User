@@ -71,11 +71,11 @@ _
         }],
         min_new_uid => ['str' => {
             summary => 'Set minimum UID when creating new user',
-            default => 1,
+            default => 0,
         }],
         max_new_uid => ['str' => {
             summary => 'Set maximum UID when creating new user',
-            default => 65535,
+            default => 65534,
         }],
         min_new_gid => ['str' => {
             summary => 'Set minimum GID when creating new group',
