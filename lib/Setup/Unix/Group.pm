@@ -77,7 +77,7 @@ sub setup_unix_group {
                 if $Passwd::Unix::Alt::errstr &&
                     $Passwd::Unix::Alt::errstr !~ /unknown group/i;
             if (!$g[0]) {
-                $log->tracef("nok: unix group $name doesn't exist");
+                $log->info("nok: unix group $name doesn't exist");
                 push @$steps, ["create"];
                 last;
             }
