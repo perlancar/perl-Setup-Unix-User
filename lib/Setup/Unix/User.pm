@@ -40,7 +40,8 @@ $SPEC{setup_unix_user} = {
     description => <<'_',
 
 On do, will create Unix user if not already exists. And also make sure user
-belong to specified groups (and not belong to unwanted groups).
+belong to specified groups (and not belong to unwanted groups). Return the
+created UID/GID in the result.
 
 On undo, will delete Unix user (along with its initially created home dir and
 files) if it was created by this function. Also will restore old group
