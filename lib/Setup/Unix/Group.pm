@@ -38,6 +38,14 @@ _
             summary => 'When creating new group, specify maximum GID',
             default => 65534,
         }],
+        new_gid => ['int' => {
+            summary => 'Specify desired GID',
+            description => <<'_',
+
+This is equivalent to specifying min_new_gid=gid and max_new_gid=gid.
+
+_
+        }],
     },
     features => {undo=>1, dry_run=>1},
 };
@@ -123,8 +131,15 @@ sub setup_unix_group {
                     $log->trace("finding an unused GID ...");
                     my @gids = map {($pu->group($_))[0]} $pu->groups;
                     #$log->tracef("gids = %s", \@gids);
-                    $gid = $args{min_new_gid} // 1;
-                    my $max = $args{max_new_gid} // 65535;
+                    my $max;
+                    # we shall search a range for a free gid
+                    if (defined $args{new_gid}) {
+                        $gid = $args{new_gid};
+                        $max = $args{new_gid};
+                    } else {
+                        $gid = $args{min_new_gid} // 1;
+                        $max = $args{max_new_gid} // 65535;
+                    }
                     while (1) {
                         last if $gid > $max;
                         unless ($gid ~~ @gids) {

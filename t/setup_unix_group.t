@@ -98,5 +98,28 @@ test_setup_unix_group(
 
 # at this point, existing groups: u1=1000, g2=1001, u2=1002, g3=1003
 
+test_setup_unix_group(
+    name       => "create (new_gid, nothing done cause group exists)",
+    args       => {name=>"g2", new_gid=>1002},
+    status     => 304,
+);
+test_setup_unix_group(
+    name       => "create (new_gid, failed due to gid taken)",
+    args       => {name=>"g4", new_gid=>1001},
+    status     => 500,
+    exists     => 0,
+);
+test_setup_unix_group(
+    name       => "create (new_gid, success)",
+    args       => {name=>"g4", new_gid=>1004},
+    status     => 200,
+    posttest   => sub {
+        my $res = shift;
+        is($res->[2]{gid}, 1004, "gid");
+    },
+);
+
+# at this point, existing groups: u1=1000, g2=1001, u2=1002, g3=1003, g4=1004
+
 DONE_TESTING:
 teardown();
