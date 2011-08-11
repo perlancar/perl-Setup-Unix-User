@@ -158,9 +158,9 @@ sub setup_unix_user {
     my $use_skel_dir      = $args{use_skel_dir}      // 1;
     my $skel_dir          = $args{skel_dir}          // "/etc/skel";
     my $primary_group     = $args{primary_group}     // $name;
-    my $member_of         = $args{member_of} // [];
+    my $member_of         = $args{member_of}         // [];
     push @$member_of, $primary_group unless $primary_group ~~ @$member_of;
-    my $not_member_of     = $args{not_member_of} // [];
+    my $not_member_of     = $args{not_member_of}     // [];
     for (@$member_of) {
         return [400, "Group $_ is in member_of and not_member_of"]
             if $_ ~~ @$not_member_of;
