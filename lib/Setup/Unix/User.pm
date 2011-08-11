@@ -569,6 +569,16 @@ modules family.
 None are exported by default, but they are exportable.
 
 
+=head1 FAQ
+
+=head2 How to create group with a specific UID and/or GID?
+
+Set C<min_new_uid> and C<max_new_uid> (and/or C<min_new_gid> and C<max_new_gid>)
+to your desired values. Note that the function will report failure if when
+wanting to create a user, the desired UID is already taken. But the function
+will not report failure if the user already exists, even with a different UID.
+
+
 =head1 SEE ALSO
 
 L<Setup::Unix::Group>.

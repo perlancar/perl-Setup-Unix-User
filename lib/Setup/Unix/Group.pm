@@ -236,8 +236,8 @@ None are exported by default, but they are exportable.
 
 Set C<min_new_gid> and C<max_new_gid> to your desired value. Note that the
 function will report failure if when wanting to create a group, the desired GID
-is already taken. But it will not report failure if the group already exists,
-even with a different GID.
+is already taken. But the function will not report failure if the group already
+exists, even with a different GID.
 
 
 =head1 SEE ALSO
