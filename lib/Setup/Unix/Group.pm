@@ -19,7 +19,8 @@ $SPEC{setup_unix_group} = {
     summary  => "Setup Unix group (existence)",
     description => <<'_',
 
-On do, will create Unix group if not already exists.
+On do, will create Unix group if not already exists. The created GID will be
+returned in the result.
 
 On undo, will delete Unix group previously created.
 
