@@ -244,6 +244,9 @@ test_setup_unix_user(
     posttest   => sub {
         my ($res, $name, $pu) = @_;
 
+        my @u = $pu->user($name);
+        is($u[1], 4, "uid");
+
         my @g = $pu->group($name);
         ok(!$g[0], "group 'nouser' not created") or diag explain \@g;
 
@@ -254,8 +257,31 @@ test_setup_unix_user(
     },
 );
 
+test_setup_unix_user(
+    name       => "create (primary_group always added ".
+        "even if member_of doesn't include it)",
+    args       => {name => 'nouser2',
+                   new_home_dir=>"$tmp_dir/home",
+                   primary_group=>'nobody',
+                   member_of=>[]},
+    status     => 200,
+    posttest   => sub {
+        my ($res, $name, $pu) = @_;
 
-# at this point, users: u1=1000, u2=1001, u3=3, u4=1002, nouser=1003
+        my @u = $pu->user($name);
+        is($u[1], 5, "uid");
+
+        my @g = $pu->group($name);
+        ok(!$g[0], "group 'nouser2' not created") or diag explain \@g;
+
+        my @g = $pu->group('nobody');
+        ok($g[0] && "nouser2" ~~ @{$g[1]},
+           "user is member of nobody (primary group)")
+            or diag explain $g[1];
+    },
+);
+
+# at this point, users: u1=1000, u2=1001, u3=3, u4=1002, nouser=4, nouser2=5
 
 # XXX test rollback
 

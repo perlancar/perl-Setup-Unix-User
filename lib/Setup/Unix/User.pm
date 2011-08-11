@@ -66,11 +66,8 @@ _
                 'member of',
             description => <<'_',
 
-The first element will be used as the primary group. If a group doesn't exist,
-it will be ignored.
-
-If not specified, the default is one group having the same name as the user. The
-group will be created if not already exists.
+If not specified, member_of will be set to just the primary group. The primary
+group will always be added even if not specified.
 
 _
             of => 'str*',
@@ -161,7 +158,8 @@ sub setup_unix_user {
     my $use_skel_dir      = $args{use_skel_dir}      // 1;
     my $skel_dir          = $args{skel_dir}          // "/etc/skel";
     my $primary_group     = $args{primary_group}     // $name;
-    my $member_of         = $args{member_of} // [$primary_group];
+    my $member_of         = $args{member_of} // [];
+    push @$member_of, $primary_group unless $primary_group ~~ @$member_of;
     my $not_member_of     = $args{not_member_of} // [];
     for (@$member_of) {
         return [400, "Group $_ is in member_of and not_member_of"]
