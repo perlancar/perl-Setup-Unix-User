@@ -130,6 +130,16 @@ _
                 'when creating new user',
             default => 1,
         }],
+        primary_group => ['str' => {
+            summary => "Specify user's primary group",
+            description => <<'_',
+
+In Unix systems, a user must be a member of at least one group. This group is
+referred to as the primary group. By default, primary group name is the same as
+the user name. The group will be created if not exists.
+
+_
+        }],
     },
     features => {undo=>1, dry_run=>1},
 };
@@ -150,8 +160,8 @@ sub setup_unix_user {
     my $create_home_dir   = $args{create_home_dir}   // 1;
     my $use_skel_dir      = $args{use_skel_dir}      // 1;
     my $skel_dir          = $args{skel_dir}          // "/etc/skel";
-    my $member_of         = $args{member_of} // [];
-    push @$member_of, $name unless $name ~~ @$member_of;
+    my $primary_group     = $args{primary_group}     // $name;
+    my $member_of         = $args{member_of} // [$primary_group];
     my $not_member_of     = $args{not_member_of} // [];
     for (@$member_of) {
         return [400, "Group $_ is in member_of and not_member_of"]
@@ -278,14 +288,16 @@ sub setup_unix_user {
             $found = defined($gid);
             my $mingid = $args{min_new_gid} // $uid;
             my $maxgid = $args{max_new_gid} // $maxuid;
+            my $pgroup = $primary_group     // $name;
             if (!$found) {
-                my @g = $pu->group($name);
+                my @g = $pu->group($pgroup);
                 if ($g[0]) {
                     $gid = $g[0];
                 } else {
-                    $log->trace("Creating Unix group $name ...");
+                    $log->trace("Creating primary group for user $name: ".
+                                    "$pgroup ...");
                     my %s_args = (
-                        name          => $name,
+                        name          => $pgroup,
                         _passwd_path  => $passwd_path,
                         _shadow_path  => $shadow_path,
                         _group_path   => $group_path,
@@ -297,7 +309,8 @@ sub setup_unix_user {
                         %s_args, -undo_action => $save_undo ? 'do' : undef);
                     $log->tracef("res from setup_unix_group: %s", $res);
                     if ($res->[0] != 200) {
-                        $err = "Can't setup Unix group: $res->[0] - $res->[1]";
+                        $err = "Can't setup Unix group $pgroup: ".
+                            "$res->[0] - $res->[1]";
                     } else {
                         $gid = $res->[2]{gid};
                         unshift @$undo_steps,
@@ -571,12 +584,18 @@ None are exported by default, but they are exportable.
 
 =head1 FAQ
 
-=head2 How to create group with a specific UID and/or GID?
+=head2 How to create user with a specific UID and/or GID?
 
 Set C<min_new_uid> and C<max_new_uid> (and/or C<min_new_gid> and C<max_new_gid>)
 to your desired values. Note that the function will report failure if when
 wanting to create a user, the desired UID is already taken. But the function
 will not report failure if the user already exists, even with a different UID.
+
+=head2 How to create user without creating a group with the same name as that user?
+
+By default, C<primary_group> is set to the same name as the user. You can set it
+to an existing group, e.g. "users" and the setup function will not create a new
+group with the same name as user.
 
 
 =head1 SEE ALSO
