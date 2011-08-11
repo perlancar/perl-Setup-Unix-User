@@ -1,5 +1,5 @@
 package Setup::Unix::User;
-# ABSTRACT: Setup Unix user (existence, group memberships)
+# ABSTRACT: Setup Unix user (existence, home dir, group memberships)
 
 use 5.010;
 use strict;
