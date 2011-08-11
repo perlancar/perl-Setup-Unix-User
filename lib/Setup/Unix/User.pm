@@ -1,5 +1,4 @@
 package Setup::Unix::User;
-# ABSTRACT: Setup Unix user (existence, home dir, group memberships)
 
 use 5.010;
 use strict;
@@ -17,6 +16,8 @@ use Text::Password::Pronounceable;
 require Exporter;
 our @ISA       = qw(Exporter);
 our @EXPORT_OK = qw(setup_unix_user);
+
+# VERSION
 
 our %SPEC;
 
@@ -523,6 +524,7 @@ sub setup_unix_user {
 }
 
 1;
+# ABSTRACT: Setup Unix user (existence, home dir, group memberships)
 __END__
 
 =head1 SYNOPSIS

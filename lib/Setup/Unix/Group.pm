@@ -1,5 +1,4 @@
 package Setup::Unix::Group;
-# ABSTRACT: Setup Unix group (existence)
 
 use 5.010;
 use strict;
@@ -11,6 +10,8 @@ our @ISA       = qw(Exporter);
 our @EXPORT_OK = qw(setup_unix_group);
 
 use Passwd::Unix::Alt;
+
+# VERSION
 
 our %SPEC;
 
@@ -182,6 +183,7 @@ sub setup_unix_group {
     return [@$steps ? 200 : 304, @$steps ? "OK" : "Nothing done", $data, $meta];
 }
 1;
+# ABSTRACT: Setup Unix group (existence)
 __END__
 
 =head1 SYNOPSIS
