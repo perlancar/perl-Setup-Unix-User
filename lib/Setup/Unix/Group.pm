@@ -39,14 +39,6 @@ _
             summary => 'When creating new group, specify maximum GID',
             default => 65534,
         }],
-        new_gid => ['int' => {
-            summary => 'Specify desired GID',
-            description => <<'_',
-
-This is equivalent to specifying min_new_gid=gid and max_new_gid=gid.
-
-_
-        }],
     },
     features => {undo=>1, dry_run=>1},
 };
@@ -134,13 +126,8 @@ sub setup_unix_group {
                     #$log->tracef("gids = %s", \@gids);
                     my $max;
                     # we shall search a range for a free gid
-                    if (defined $args{new_gid}) {
-                        $gid = $args{new_gid};
-                        $max = $args{new_gid};
-                    } else {
-                        $gid = $args{min_new_gid} // 1;
-                        $max = $args{max_new_gid} // 65535;
-                    }
+                    $gid = $args{min_new_gid} // 1;
+                    $max = $args{max_new_gid} // 65535;
                     while (1) {
                         last if $gid > $max;
                         unless ($gid ~~ @gids) {
@@ -241,6 +228,16 @@ modules family.
 =head1 FUNCTIONS
 
 None are exported by default, but they are exportable.
+
+
+=head1 FAQ
+
+=head2 How to create group with a specific GID?
+
+Set C<min_new_gid> and C<max_new_gid> to your desired value. Note that the
+function will report failure if when wanting to create a group, the desired GID
+is already taken. But it will not report failure if the group already exists,
+even with a different GID.
 
 
 =head1 SEE ALSO
