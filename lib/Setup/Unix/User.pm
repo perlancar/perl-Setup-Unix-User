@@ -178,6 +178,7 @@ sub setup_unix_user {
         shadow   => $shadow_path,
         gshadow  => $gshadow_path,
         warnings => 0,
+        #lock     => 1,
     );
 
     my ($uid, $gid);
