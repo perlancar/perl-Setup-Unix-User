@@ -204,7 +204,11 @@ sub setup_unix_user {
             my @membership = _get_user_membership($name, $pu);
             for (@$member_of) {
                 my @g = $pu->group($_);
-                next unless $g[0]; # ignore non-existant group
+                if (!$g[0]) {
+                    $log->info("unix user $name should be member of $_ ".
+                                   "but the group doesn't exist, ignored");
+                    next;
+                }
                 unless ($_ ~~ @membership) {
                     $log->info("nok: unix user $name should be ".
                                    "member of $_ but isn't");
