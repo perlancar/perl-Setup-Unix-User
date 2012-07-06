@@ -134,7 +134,7 @@ _
             schema  => ['int' => {default => 0}],
             summary => 'When creating new group, specify minimum GID',
         },
-        min_new_gid => {
+        max_new_gid => {
             schema  => ['int' => {default => 65534}],
             summary => 'When creating new group, specify maximum GID',
         },
