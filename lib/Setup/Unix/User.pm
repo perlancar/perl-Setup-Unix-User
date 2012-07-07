@@ -8,9 +8,7 @@ use Log::Any '$log';
 use File::chdir;
 use File::Find;
 use File::Slurp;
-use Setup::Unix::Group qw(setup_unix_group);
-use Setup::File        qw(setup_file);
-use Setup::File::Dir   qw(setup_dir);
+use Perinci::Sub::Gen::Undoable 0.13 qw(gen_undoable_func);
 use Text::Password::Pronounceable;
 
 require Exporter;
@@ -19,7 +17,9 @@ our @EXPORT_OK = qw(setup_unix_user);
 
 # VERSION
 
-our %SPEC;
+sub _create_pu_object {
+    Setup::Unix::Group::_create_pu_object(@_);
+}
 
 sub _get_user_membership {
     my ($name, $pu) = @_;
@@ -35,285 +35,78 @@ sub _rand_pass {
     Text::Password::Pronounceable->generate(10, 16);
 }
 
-$SPEC{setup_unix_user} = {
-    summary  => "Setup Unix user (existence, group memberships)",
-    description => <<'_',
+sub _check_or_fix {
+    my ($which, $args, $step, $undo, $r, $rmeta) = @_;
+    my $name = $args->{name};
 
-On do, will create Unix user if not already exists. And also make sure user
-belong to specified groups (and not belong to unwanted groups). Return the
-created UID/GID in the result.
-
-On undo, will delete Unix user (along with its initially created home dir and
-files) if it was created by this function. Also will restore old group
-memberships.
-
-_
-    args => {
-        name => ['str*' => {
-            summary => 'User name',
-        }],
-        should_already_exist => ['bool' => {
-            summary => 'If set to true, require that user already exists',
-            description => <<'_',
-
-This can be used to fix user membership, but does not create user when it
-doesn't exist.
-
-_
-            default => 0,
-        }],
-        member_of => ['array' => {
-            summary => 'List of Unix group names that the user must be '.
-                'member of',
-            description => <<'_',
-
-If not specified, member_of will be set to just the primary group. The primary
-group will always be added even if not specified.
-
-_
-            of => 'str*',
-        }],
-        not_member_of => ['str*' => {
-            summary => 'List of Unix group names that the user must NOT be '.
-                'member of',
-            of => 'str*',
-        }],
-        min_new_uid => ['str' => {
-            summary => 'Set minimum UID when creating new user',
-            default => 0,
-        }],
-        max_new_uid => ['str' => {
-            summary => 'Set maximum UID when creating new user',
-            default => 65534,
-        }],
-        min_new_gid => ['str' => {
-            summary => 'Set minimum GID when creating new group',
-            description => 'Default is UID',
-        }],
-        max_new_gid => ['str' => {
-            summary => 'Set maximum GID when creating new group',
-            description => 'Default follows max_new_uid',
-        }],
-        new_password => ['str' => {
-            summary => 'Set password when creating new user',
-            description => 'Default is a random password',
-        }],
-        new_gecos => ['str' => {
-            summary => 'Set gecos (usually, full name) when creating new user',
-            default => '',
-        }],
-        new_home_dir => ['str' => {
-            summary => 'Set home directory when creating new user, '.
-                'defaults to /home/<username>',
-        }],
-        new_home_dir_mode => [int => {
-            summary => 'Set permission mode of home dir '.
-                'when creating new user',
-            default => 0700,
-        }],
-        new_shell => ['str' => {
-            summary => 'Set shell when creating new user',
-            default => '/bin/bash',
-        }],
-        skel_dir => [str => {
-            summary => 'Directory to get skeleton files when creating new user',
-            default => '/etc/skel',
-        }],
-        create_home_dir => [bool => {
-            summary => 'Whether to create homedir when creating new user',
-            default => 1,
-        }],
-        use_skel_dir => [bool => {
-            summary => 'Whether to copy files from skeleton dir '.
-                'when creating new user',
-            default => 1,
-        }],
-        primary_group => ['str' => {
-            summary => "Specify user's primary group",
-            description => <<'_',
-
-In Unix systems, a user must be a member of at least one group. This group is
-referred to as the primary group. By default, primary group name is the same as
-the user name. The group will be created if not exists.
-
-_
-        }],
-    },
-    features => {undo=>1, dry_run=>1},
-};
-sub setup_unix_user {
-    my %args           = @_;
-    my $dry_run        = $args{-dry_run};
-    my $undo_action    = $args{-undo_action} // "";
-
-    # check args
-    my $name           = $args{name};
-    $name or return [400, "Please specify name"];
-    $name =~ /^[A-Za-z0-9_-]+$/ or return [400, "Invalid group name syntax"];
-    my $new_password      = $args{new_password}      // _rand_pass();
-    my $new_gecos         = $args{new_gecos}         // "";
-    my $new_home_dir      = $args{new_home_dir}      // "/home/$name";
-    my $new_home_dir_mode = $args{new_home_dir_mode} // 0700;
-    my $new_shell         = $args{new_shell}         // "/bin/bash";
-    my $create_home_dir   = $args{create_home_dir}   // 1;
-    my $use_skel_dir      = $args{use_skel_dir}      // 1;
-    my $skel_dir          = $args{skel_dir}          // "/etc/skel";
-    my $primary_group     = $args{primary_group}     // $name;
-    my $member_of         = $args{member_of}         // [];
-    push @$member_of, $primary_group unless $primary_group ~~ @$member_of;
-    my $not_member_of     = $args{not_member_of}     // [];
-    for (@$member_of) {
-        return [400, "Group $_ is in member_of and not_member_of"]
-            if $_ ~~ @$not_member_of;
-    }
-
-    # create PUA object
-    my $passwd_path  = $args{_passwd_path}  // "/etc/passwd";
-    my $group_path   = $args{_group_path}   // "/etc/group";
-    my $shadow_path  = $args{_shadow_path}  // "/etc/shadow";
-    my $gshadow_path = $args{_gshadow_path} // "/etc/gshadow";
-    my $pu = Passwd::Unix::Alt->new(
-        passwd   => $passwd_path,
-        group    => $group_path,
-        shadow   => $shadow_path,
-        gshadow  => $gshadow_path,
-        warnings => 0,
-        #lock     => 1,
-    );
+    my ($pu, $passwd_path, $group_path, $shadow_path, $gshadow_path) =
+        _create_pu_object($args);
 
     my ($uid, $gid);
 
-    # check current state and collect steps
-    my $steps;
-    if ($undo_action eq 'undo') {
-        $steps = $args{-undo_data} or return [400, "Please supply -undo_data"];
-    } else {
-        $steps = [];
-        {
-            my @u = $pu->user($name);
-            if (!@u) {
-                $log->infof("nok: unix user $name doesn't exist");
-                return [412, "user must already exist"]
-                    if $args{should_already_exist};
-                push @$steps, ["create", "fix_membership", ""];
-                last;
+    if ($step->[0] eq 'create') { # arg: [uid, gid, [encp, gecos, home, sh]]
+        $uid = undef; $gid = undef;
+        my @u = $pu->user($name);
+        if (@u) {
+            if (defined($step->[1])) {
+                if ($step->[1] ne $u[1]) {
+                    return [412, "User already exists, but with different ".
+                                "UID $u[1] (we need to create UID $step->[1])"];
+                }
+                $uid = $u[1];
             }
+            if (defined($step->[2])) {
+                if ($step->[2] ne $u[2]) {
+                    return [412, "User already exists, but with different ".
+                                "GID $u[2] (we need to create GID $step->[2])"];
+                }
+                $gid = $u[2];
+            }
+            return [304, "User already exists with correct UID/GID"];
+        }
 
-            $uid = $u[1];
-            $gid = $u[2];
-            my @membership = _get_user_membership($name, $pu);
-            for (@$member_of) {
-                my @g = $pu->group($_);
-                if (!$g[0]) {
-                    $log->info("unix user $name should be member of $_ ".
-                                   "but the group doesn't exist, ignored");
-                    next;
+        my $found = defined($uid);
+        my $minuid = $args->{min_new_uid} // 1;
+        my $maxuid = $args->{max_new_uid} // 65535;
+        if (!$found) {
+            $log->trace("finding an unused UID ...");
+            my @uids = map {($pu->user($_))[1]} $pu->users;
+            $uid = $minuid;
+            while (1) {
+                last if $uid > $maxuid;
+                unless ($uid ~~ @uids) {
+                    $log->tracef("found unused UID: %d", $uid);
+                    $found++;
+                    last;
                 }
-                unless ($_ ~~ @membership) {
-                    $log->info("nok: unix user $name should be ".
-                                   "member of $_ but isn't");
-                    push @$steps, ["add_group", $_];
-                }
-            }
-            for (@$not_member_of) {
-                if ($_ ~~ @membership) {
-                    $log->info("nok: unix user $name should NOT be ".
-                                   "member of $_ but is");
-                    push @$steps, ["remove_group", $_];
-                }
+                $uid++;
             }
         }
-    }
+        return [412, "Can't find unused UID"] unless $found;
 
-    return [400, "Invalid steps, must be an array"]
-        unless $steps && ref($steps) eq 'ARRAY';
-    return [200, "Dry run"] if $dry_run && @$steps;
-
-    my $save_undo = $undo_action ? 1:0;
-    my $undo_hint = $args{-undo_hint} // {};
-    return [400, "Invalid -undo_hint, please supply a hashref"]
-        unless ref($undo_hint) eq 'HASH';
-    my $tmp_dir = $undo_hint->{tmp_dir};
-
-    # perform the steps
-    my $rollback;
-    my $undo_steps = [];
-  STEP:
-    for my $i (0..@$steps-1) {
-        my $step = $steps->[$i];
-        next unless defined $step; # can happen even when steps=[], due to redo
-        $log->tracef("step %d of 0..%d: %s", $i, @$steps-1, $step);
-        my $err;
-        return [400, "Invalid step (not array)"] unless ref($step) eq 'ARRAY';
-
-        if ($step->[0] eq 'create') { # arg: [uid, gid, [encp, gecos, home, sh]]
-
-            $uid = undef; $gid = undef;
-            my @u = $pu->user($name);
-            if (@u) {
-                if (defined($step->[1])) {
-                    if ($step->[1] ne $u[1]) {
-                        $err = "User already exists, but with different ".
-                            "UID $u[1] (we need to create UID $step->[1])";
-                        goto CHECK_ERR;
-                    }
-                    $uid = $u[1];
-                }
-                if (defined($step->[2])) {
-                    if ($step->[2] ne $u[2]) {
-                        $err = "User already exists, but with different ".
-                            "GID $u[2] (we need to create GID $step->[2])";
-                        goto CHECK_ERR;
-                    }
-                    $gid = $u[2];
-                }
-                # user already exists with correct uid/gid, skip this step
-                next STEP;
-            }
-            my $found = defined($uid);
-            my $minuid = $args{min_new_uid} // 1;
-            my $maxuid = $args{max_new_uid} // 65535;
-            if (!$found) {
-                $log->trace("finding an unused UID ...");
-                my @uids = map {($pu->user($_))[1]} $pu->users;
-                $uid = $minuid;
-                while (1) {
-                    last if $uid > $maxuid;
-                    unless ($uid ~~ @uids) {
-                        $log->tracef("found unused UID: %d", $uid);
-                        $found++;
-                        last;
-                    }
-                    $uid++;
-                }
-            }
-            if (!$found) {
-                $err = "Can't find unused UID";
-                goto CHECK_ERR;
-            }
-            $found = defined($gid);
-            my $mingid = $args{min_new_gid} // $uid;
-            my $maxgid = $args{max_new_gid} // $maxuid;
-            my $pgroup = $primary_group     // $name;
-            if (!$found) {
-                my @g = $pu->group($pgroup);
-                if ($g[0]) {
-                    $gid = $g[0];
-                } else {
-                    $log->trace("Creating primary group for user $name: ".
-                                    "$pgroup ...");
-                    my %s_args = (
-                        name          => $pgroup,
-                        _passwd_path  => $passwd_path,
-                        _shadow_path  => $shadow_path,
-                        _group_path   => $group_path,
-                        _gshadow_path => $gshadow_path,
-                        min_new_gid   => $mingid,
-                        max_new_gid   => $maxgid,
-                    );
-                    my $res = setup_unix_group(
-                        %s_args, -undo_action => $save_undo ? 'do' : undef);
-                    $log->tracef("res from setup_unix_group: %s", $res);
+        $found = defined($gid);
+        my $mingid = $args->{min_new_gid}   // $uid;
+        my $maxgid = $args->{max_new_gid}   // $maxuid;
+        my $pgroup = $args->{primary_group} // $name;
+        if (!$found) {
+            my @g = $pu->group($pgroup);
+            if ($g[0]) {
+                $gid = $g[0];
+            } else {
+                $log->trace("Creating primary group for user $name: ".
+                                "$pgroup ...");
+                my %s_args = (
+                    name          => $pgroup,
+                    _passwd_path  => $passwd_path,
+                    _shadow_path  => $shadow_path,
+                    _group_path   => $group_path,
+                    _gshadow_path => $gshadow_path,
+                    min_new_gid   => $mingid,
+                    max_new_gid   => $maxgid,
+                );
+                my $res = setup_unix_group(
+                    %s_args, -undo_action => $save_undo ? 'do' : undef);
+                $log->tracef("res from setup_unix_group: %s", $res);
                     if ($res->[0] != 200) {
                         $err = "Can't setup Unix group $pgroup: ".
                             "$res->[0] - $res->[1]";
@@ -515,7 +308,220 @@ sub setup_unix_user {
                 }
             }
 
-        } else {
+}
+
+my $res = gen_undoable_func(
+    name => 'setup_unix_ser',
+    summary  => "Setup Unix user (existence, group memberships)",
+    description => <<'_',
+
+On do, will create Unix user if not already exists. And also make sure user
+belong to specified groups (and not belong to unwanted groups). Return the
+created UID/GID in the result.
+
+On undo, will delete Unix user (along with its initially created home dir and
+files) if it was created by this function. Also will restore old group
+memberships.
+
+_
+    trash_dir   => 1,
+    args => {
+        name => {
+            schema => 'str*',
+            summary => 'User name',
+        },
+        should_already_exist => {
+            schema => ['bool' => {default => 0}],
+            summary => 'If set to true, require that user already exists',
+            description => <<'_',
+
+This can be used to fix user membership, but does not create user when it
+doesn't exist.
+
+_
+        },
+        member_of => {
+            schema => ['array' => {of=>'str*'}],
+            summary => 'List of Unix group names that the user must be '.
+                'member of',
+            description => <<'_',
+
+If not specified, member_of will be set to just the primary group. The primary
+group will always be added even if not specified.
+
+_
+        },
+        not_member_of => {
+            schema  => ['array' => {of=>'str*'}],
+            summary => 'List of Unix group names that the user must NOT be '.
+                'member of',
+        },
+        min_new_uid => {
+            schema  => ['int' => {default=>0}],
+            summary => 'Set minimum UID when creating new user',
+        },
+        max_new_uid => {
+            schema  => ['int' => {default => 65534}],
+            summary => 'Set maximum UID when creating new user',
+        },
+        min_new_gid => {
+            schema  => 'int',
+            summary => 'Set minimum GID when creating new group',
+            description => 'Default is UID',
+        },
+        max_new_gid => {
+            schema  => 'int',
+            summary => 'Set maximum GID when creating new group',
+            description => 'Default follows max_new_uid',
+        },
+        new_password => {
+            schema  => 'str',
+            summary => 'Set password when creating new user',
+            description => 'Default is a random password',
+        },
+        new_gecos => {
+            schema  => ['str' => {default=>''}],
+            summary => 'Set gecos (usually, full name) when creating new user',
+        },
+        new_home_dir => {
+            schema  => 'str',
+            summary => 'Set home directory when creating new user, '.
+                'defaults to /home/<username>',
+        },
+        new_home_dir_mode => {
+            schema  => [int => {default => 0700}],
+            summary => 'Set permission mode of home dir '.
+                'when creating new user',
+        },
+        new_shell => {
+            schema  => ['str' => {default => '/bin/bash'}],
+            summary => 'Set shell when creating new user',
+        },
+        skel_dir => {
+            schema  => [str => {default => '/etc/skel'}],
+            summary => 'Directory to get skeleton files when creating new user',
+        },
+        create_home_dir => {
+            schema  => [bool => {default=>1}],
+            summary => 'Whether to create homedir when creating new user',
+        },
+        use_skel_dir => {
+            schema  => [bool => {default=>1}],
+            summary => 'Whether to copy files from skeleton dir '.
+                'when creating new user',
+        },
+        primary_group => {
+            schema  => 'str',
+            summary => "Specify user's primary group",
+            description => <<'_',
+
+In Unix systems, a user must be a member of at least one group. This group is
+referred to as the primary group. By default, primary group name is the same as
+the user name. The group will be created if not exists.
+
+_
+        },
+    },
+
+    check_args => sub {
+        my $args = shift;
+
+        $args->{name} or return [400, "Please specify name"];
+        $args->{name} =~ /^[A-Za-z0-9_-]+$/
+            or return [400, "Invalid user name syntax"];
+        $args->{new_password}      //= _rand_pass();
+        $args->{new_gecos}         //= "";
+        $args->{new_home_dir}      //= "/home/$args->{name}";
+        $args->{new_home_dir_mode} //= 0700;
+        $args->{new_shell}         //= "/bin/bash";
+        $args->{create_home_dir}   //= 1;
+        $args->{use_skel_dir}      //= 1;
+        $args->{skel_dir}          //= "/etc/skel";
+        $args->{primary_group}     //= $args->{name};
+        $args->{member_of}         //= [];
+        push @{$args->{member_of}}, $args->{primary_group}
+            unless $args->{primary_group} ~~ @{$args->{member_of}};
+        $args->{not_member_of}     //= [];
+        for (@{$args->{member_of}}) {
+            return [400, "Group $_ is in member_of and not_member_of"]
+                if $_ ~~ @{$args->{not_member_of}};
+        }
+        [200, "OK"];
+    },
+
+    build_steps => sub {
+        my $args = shift;
+        my $name = $args->{name};
+
+        my $pu = _create_pu_object($args);
+        my @steps;
+
+        if ($args->{primary_group} eq $name) {
+            my @g = $pu->group($name);
+            if (!@g) {
+                $log->infof("nok: unix group $name doesn't exist");
+                push @steps, ["setup_unix_group"];
+            }
+        }
+
+        my @u = $pu->user($name);
+        if (!@u) {
+            $log->infof("nok: unix user $name doesn't exist");
+            return [412, "user must already exist"]
+                if $args->{should_already_exist};
+            push @steps, ["create"];
+            last;
+        }
+
+        my $uid = $u[1];
+        my $gid = $u[2];
+        my @membership = _get_user_membership($name, $pu);
+        for (@{$args->{member_of}}) {
+            my @g = $pu->group($_);
+            if (!$g[0]) {
+                $log->info("unix user $name should be member of $_ ".
+                               "but the group doesn't exist, ignored");
+                next;
+            }
+            unless ($_ ~~ @membership) {
+                $log->info("nok: unix user $name should be ".
+                               "member of $_ but isn't");
+                push @steps, ["add_group", $_];
+            }
+        }
+        for (@{$args->{not_member_of}}) {
+            if ($_ ~~ @membership) {
+                $log->info("nok: unix user $name should NOT be ".
+                               "member of $_ but is");
+                push @steps, ["remove_group", $_];
+            }
+        }
+
+        [200, "OK", \@steps];
+    }
+
+    steps => {
+        create => {
+            summary => 'Create user',
+            check_or_fix => \&_check_or_fix,
+        },
+        delete => {
+            summary => 'Delete user',
+            check_or_fix => \&_check_or_fix,
+        },
+        add_group => {
+            summary => 'Add user to a group',
+            check_or_fix => \&_check_or_fix,
+        },
+        remove_group => {
+            summary => 'Remove user from a group',
+            check_or_fix => \&_check_or_fix,
+        },
+    },
+);
+die "Can't generate function: $res->[0] - $res->[1]" unless $res->[0] == 200;
+
+} else {
 
             die "BUG: Unknown step command: $step->[0]";
 
@@ -569,23 +575,11 @@ __END__
 
 This module provides one function: B<setup_unix_user>.
 
-This module is part of the Setup modules family.
+This module is part of the L<Setup> modules family.
 
 This module uses L<Log::Any> logging framework.
 
 This module has L<Rinci> metadata.
-
-
-=head1 THE SETUP MODULES FAMILY
-
-I use the C<Setup::> namespace for the Setup modules family. See L<Setup::File>
-for more details on the goals, characteristics, and implementation of Setup
-modules family.
-
-
-=head1 FUNCTIONS
-
-None are exported by default, but they are exportable.
 
 
 =head1 FAQ
@@ -608,6 +602,6 @@ group with the same name as user.
 
 L<Setup::Unix::Group>.
 
-Other modules in Setup:: namespace.
+L<Setup>.
 
 =cut
