@@ -10,21 +10,26 @@ use lib $Bin, "$Bin/t";
 use Test::More 0.96;
 require "testlib.pl";
 
-use vars qw($tmp_dir $pu);
+use vars qw($tmp_dir);
 
 setup();
 
 test_setup_unix_user(
     name          => "create with create_home_dir=0",
-    args          => {name=>"u3", create_home_dir=>0},
-    check_unsetup => {exists=>0},
-    check_setup   => {uid=>3, gid=>3, member_of=>[qw/u3/]},
+    args          => {user=>"u3", create_home_dir=>0},
+    after_undo    => {exists=>0},
+    after_do      => {
+        uid=>1002, gid=>1001, member_of=>[qw/u3/],
+        extra => sub {
+            ok(!(-d "$tmp_dir/home"), "home not created");
+        }
+    },
 );
-# at this point, users: u1=1000, u2=1001, u3=3
+goto DONE_TESTING;
 
 my %args = (
     name              => "u4",
-    min_new_uid       => 1000,
+    min_new_uid       => 2000,
     new_password      => "123",
     new_gecos         => "user 4",
     new_home_dir      => "$tmp_dir/home",
@@ -38,8 +43,8 @@ my %args = (
 test_setup_unix_user(
     name          => "create",
     args          => {%args},
-    check_unsetup => {exists=>0},
-    check_setup   => {
+    after_undo    => {exists=>0},
+    after_do      => {
         uid   => 1002,
         gid   => 1,
         member_of     => [qw/bin u1/],
@@ -60,28 +65,28 @@ test_setup_unix_user(
         },
     },
 );
-# at this point, users: u1=1000, u2=1001, u3=3, u4=1002
+# users: u1=1000, u2=1001, u3=3, u4=1002
 
 test_setup_unix_user(
     name          => "create non-existing with should_already_exist=1 -> fail",
-    args          => {name=>"u5", create_home_dir=>0, should_already_exist=>1},
-    check_unsetup => {exists=>0},
+    args          => {user=>"u5", create_home_dir=>0, should_already_exist=>1},
+    after_undo    => {exists=>0},
     dry_do_error  => 412,
 );
 
 test_setup_unix_user(
     name          => "create, failed getting unused uid",
-    args          => {name=>"u5", create_home_dir=>0,
+    args          => {user=>"u5", create_home_dir=>0,
                       min_new_uid=>1000, max_new_uid=>1002},
-    check_unsetup => {exists=>0},
+    after_undo    => {exists=>0},
     do_error      => 500,
 );
 
 test_setup_unix_user(
     name          => "create existing with should_already_exist=1 -> noop",
     args          => {%args, should_already_exist=>1},
-    check_unsetup => {},
-    check_setup   => {},
+    after_undo    => {},
+    after_do      => {},
 );
 
 {
@@ -91,18 +96,18 @@ test_setup_unix_user(
     test_setup_unix_user(
         name          => "fix membership",
         args          => {%args},
-        check_unsetup => {member_of=>[qw/u1/],     not_member_of=>[qw/daemon/]},
-        check_setup   => {member_of=>[qw/daemon/], not_member_of=>[qw/u1/]},
+        after_undo    => {member_of=>[qw/u1/],     not_member_of=>[qw/daemon/]},
+        after_do      => {member_of=>[qw/daemon/], not_member_of=>[qw/u1/]},
     );
 }
 
 test_setup_unix_user(
     name          => "changed state between do and undo",
-    args          => {name=>"u5", new_home_dir=>"$tmp_dir/u5",
+    args          => {user=>"u5", new_home_dir=>"$tmp_dir/u5",
                       min_new_uid=>1000, member_of=>["bin"],
                       skel_dir=>"$tmp_dir/skel"},
-    check_unsetup => {exists=>0},
-    check_setup   => {},
+    after_undo    => {exists=>0},
+    after_do      => {},
     set_state1    => sub {
         write_file("$tmp_dir/u5/x", "test");   # file added to user's home
         unlink "$tmp_dir/u5/.file2";           # file removed
@@ -115,13 +120,7 @@ test_setup_unix_user(
         ok((-f "$tmp_dir/u5/.file3"), "file modified by us not removed");
     },
 );
-# at this point, users: u1=1000, u2=1001, u3=3, u4=1002, u5=1003
-
-goto DONE_TESTING;
-
-# XXX test rollback
-
-# XXX test failure during rollback (dies)
+# users: u1=1000, u2=1001, u3=3, u4=1002, u5=1003
 
 DONE_TESTING:
 teardown();
