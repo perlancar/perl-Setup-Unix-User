@@ -9,52 +9,18 @@ require Exporter;
 our @ISA       = qw(Exporter);
 our @EXPORT_OK = qw(setup_unix_group);
 
-use Passwd::Unix::Alt;
+use Unix::Passwd::File;
 
 # VERSION
 
 our %SPEC;
 
-sub _create_pu_object {
-    my %args = @_;
-
-    my $passwd_path  = $args{passwd_path}  // "/etc/passwd";
-    my $group_path   = $args{group_path}   // "/etc/group";
-    my $shadow_path  = $args{shadow_path}  // "/etc/shadow";
-    my $gshadow_path = $args{gshadow_path} // "/etc/gshadow";
-    my $pu = Passwd::Unix::Alt->new(
-        passwd   => $passwd_path,
-        group    => $group_path,
-        shadow   => $shadow_path,
-        gshadow  => $gshadow_path,
-        warnings => 0,
-        #lock     => 1,
-    );
-    if (wantarray) {
-        return ($pu, $passwd_path, $group_path, $shadow_path, $gshadow_path);
-    } else {
-        return $pu;
-    }
-}
-
 my %common_args = (
-    passwd_path => {
-        summary => 'Path to passwd file',
-        schema  => ['str*' => {default=>'/etc/passwd'}],
+    etc_dir => {
+        summary => 'Location of passwd files',
+        schema  => ['str*' => {default=>'/etc'}],
     },
-    shadow_path => {
-        summary => 'Path to shadow file',
-        schema  => ['str*' => {default=>'/etc/shadow'}],
-    },
-    gpasswd_path => {
-        summary => 'Path to gpasswd file',
-        schema  => ['str*' => {default=>'/etc/gpasswd'}],
-    },
-    gshadow_path => {
-        summary => 'Path to gshadow file',
-        schema  => ['str*' => {default=>'/etc/gshadow'}],
-    },
-    name => {
+    group => {
         schema  => 'str*',
         summary => 'Group name',
     },
@@ -75,34 +41,25 @@ sub delgroup {
     my %args = @_;
 
     my $tx_action = $args{-tx_action} // '';
-    my $name      = $args{name} or return [400, "Please specify name"];
-    $name=~ /\A[A-Za-z0-9_-]+\z/
-        or return [400, "Invalid group name syntax"];
-    my $pu        = _create_pu_object(%args);
+    my $group     = $args{group} or return [400, "Please specify name"];
+    $group =~ $Unix::Passwd::File::re_group
+        or return [400, "Invalid group"];
+    my %ca        = (etc_dir => $args{etc_dir}, group=>$group);
 
-    my %aargs = map {$_=>$args{$_}}
-        grep {/(passwd|group|g?shadow)_path/ && defined($args{$_})} %args;
+    my $res = Unix::Passwd::File::get_group(%ca);
+    return $res unless $res->[0] == 200 || $res->[0] == 404;
 
-    my @g = $pu->group($name);
-    if ($Passwd::Unix::Alt::errstr &&
-            $Passwd::Unix::Alt::errstr !~ /unknown group/i) {
-        return [500, "Can't check group entry: $Passwd::Unix::Alt::errstr"];
-    }
+    return [304, "Group doesn't exist"] if $res->[0] == 404;
 
     my @undo;
 
-    return [304, "Group doesn't exist"] unless $g[0];
-
     if ($tx_action eq 'check_state') {
         return [200, "Fixable", undef, {undo_actions=>[
-            [addgroup => {%aargs, name=>$name, gid=>$g[0]}]]}];
+            [addgroup => {%ca, gid => $res->[2]{gid}}],
+        ]}];
     } elsif ($tx_action eq 'fix_state') {
-        $log->infof("Deleting Unix group %s ...", $name);
-        $pu->del_group($name);
-        if ($Passwd::Unix::Alt::errstr) {
-            return [500, "Can't delete group: $Passwd::Unix::Alt::errstr"];
-        }
-        return [200, "Deleted"];
+        $log->infof("Deleting Unix group %s ...", $group);
+        return Unix::Passwd::File::delete_group(%ca);
     }
     [400, "Invalid -tx_action"];
 }
@@ -122,7 +79,7 @@ _
             schema => 'int',
         },
         min_new_gid => {
-            schema => [int => {default=>0}],
+            schema => [int => {default=>1000}],
         },
         max_new_gid => {
             schema => [int => {default=>65535}],
@@ -137,36 +94,34 @@ sub addgroup {
     my %args = @_;
 
     my $tx_action = $args{-tx_action} // '';
-    my $name      = $args{name} or return [400, "Please specify name"];
-    $name=~ /\A[A-Za-z0-9_-]+\z/
-        or return [400, "Invalid group name syntax"];
+    my $group     = $args{group} or return [400, "Please specify name"];
+    $group =~ $Unix::Passwd::File::re_group
+        or return [400, "Invalid group"];
     my $gid       = $args{gid};
-    my $pu        = _create_pu_object(%args);
+    my %ca0       = (etc_dir => $args{etc_dir});
+    my %ca        = (%ca0, group=>$group);
 
-    my %aargs = map {$_=>$args{$_}}
-        grep {/(passwd|group|g?shadow)_path/ && defined($args{$_})} %args;
+    my $res = Unix::Passwd::File::get_group(%ca);
+    $log->errorf("result of get_group: %s", $res);
+    return $res unless $res->[0] == 200 || $res->[0] == 404;
 
-    my @g = $pu->group($name);
-    if ($Passwd::Unix::Alt::errstr &&
-            $Passwd::Unix::Alt::errstr !~ /unknown group/i) {
-        return [500, "Can't check group entry: $Passwd::Unix::Alt::errstr"];
-    }
-
-    if ($g[0]) {
-        if (!defined($gid)) {
+    if ($res->[0] == 200) {
+        if (!defined($gid) || $gid == $res->[2]{gid}) {
             return [304, "Group already exists"];
-        } elsif ($gid ne $g[0]) {
+        } else {
             return [412, "Group already exists but with different GID ".
-                        "($g[0], wanted $gid)"];
+                        "($res->[2]{gid}, wanted $gid)"];
         }
     } else {
         my $found = defined($gid);
         if (!$found) {
-            my @gids = map {($pu->group($_))[0]} $pu->groups;
-            $log->tracef("gids = %s", \@gids);
+            $res = Unix::Passwd::File::list_groups(%ca0, detail=>1);
+            return $res unless $res->[0] == 200;
+            my @gids = map {$_->{gid}} @{$res->[2]};
+            #$log->tracef("gids = %s", \@gids);
             my $max;
             # we shall search a range for a free gid
-            $gid = $args{min_new_gid} // 0;
+            $gid = $args{min_new_gid} //  1000;
             $max = $args{max_new_gid} // 65535;
             $log->tracef("finding an unused GID from %d to %d ...", $gid, $max);
             while (1) {
@@ -184,15 +139,16 @@ sub addgroup {
 
     if ($tx_action eq 'check_state') {
         return [200, "Fixable", undef, {undo_actions=>[
-            [delgroup => {%aargs, name=>$name, gid=>$gid}]]}];
+            [delgroup => {%ca, gid=>$gid}],
+        ]}];
     } elsif ($tx_action eq 'fix_state') {
-        $log->infof("Adding Unix group %s ...", $name);
-        $pu->group($name, $gid, []);
-        if ($Passwd::Unix::Alt::errstr) {
-            return [500, "Can't add group $name: $Passwd::Unix::Alt::errstr"];
-        } else {
-            return [200, "Created"];
+        $log->infof("Adding Unix group %s ...", $group);
+        $res = Unix::Passwd::File::add_group(%ca, gid=>$gid);
+        if ($res->[0] == 200) {
             $args{-stash}{result}{gid} = $gid;
+            return [200, "Created"];
+        } else {
+            return $res;
         }
     }
     [400, "Invalid -tx_action"];
