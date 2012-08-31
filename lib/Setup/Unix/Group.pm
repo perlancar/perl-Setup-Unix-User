@@ -122,7 +122,7 @@ sub addgroup {
             my $max;
             # we shall search a range for a free gid
             $gid = $args{min_new_gid} //  1000;
-            $max = $args{max_new_gid} // 65535;
+            $max = $args{max_new_gid} // 65534;
             $log->tracef("finding an unused GID from %d to %d ...", $gid, $max);
             while (1) {
                 last if $gid > $max;
