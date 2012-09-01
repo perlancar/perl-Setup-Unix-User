@@ -41,10 +41,10 @@ sub delgroup {
     my %args = @_;
 
     my $tx_action = $args{-tx_action} // '';
-    my $group     = $args{group} or return [400, "Please specify name"];
+    my $group     = $args{group} or return [400, "Please specify group"];
     $group =~ $Unix::Passwd::File::re_group
         or return [400, "Invalid group"];
-    my %ca        = (etc_dir => $args{etc_dir}, group=>$group);
+    my %ca        = (etc_dir => $args{etc_dir} // "/etc", group=>$group);
 
     my $res = Unix::Passwd::File::get_group(%ca);
     return $res unless $res->[0] == 200 || $res->[0] == 404;
@@ -82,7 +82,7 @@ _
             schema => [int => {default=>1000}],
         },
         max_new_gid => {
-            schema => [int => {default=>65535}],
+            schema => [int => {default=>65534}],
         },
     },
     features => {
@@ -94,11 +94,11 @@ sub addgroup {
     my %args = @_;
 
     my $tx_action = $args{-tx_action} // '';
-    my $group     = $args{group} or return [400, "Please specify name"];
+    my $group     = $args{group} or return [400, "Please specify group"];
     $group =~ $Unix::Passwd::File::re_group
         or return [400, "Invalid group"];
     my $gid       = $args{gid};
-    my %ca0       = (etc_dir => $args{etc_dir});
+    my %ca0       = (etc_dir => $args{etc_dir} // "/etc");
     my %ca        = (%ca0, group=>$group);
 
     my $res = Unix::Passwd::File::get_group(%ca);

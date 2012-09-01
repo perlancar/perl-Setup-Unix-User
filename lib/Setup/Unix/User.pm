@@ -17,8 +17,88 @@ our @EXPORT_OK = qw(setup_unix_user);
 
 # VERSION
 
+our %SPEC;
+
 sub _rand_pass {
     Text::Password::Pronounceable->generate(10, 16);
+}
+
+my %common_args = (
+    etc_dir => {
+        summary => 'Location of passwd files',
+        schema  => ['str*' => {default=>'/etc'}],
+    },
+    user => {
+        schema  => 'str*',
+        summary => 'User name',
+    },
+);
+
+$SPEC{deluser} = {
+    v => 1.1,
+    summary => 'Delete user',
+    args => {
+        %common_args,
+    },
+    features => {
+        tx => {v=>2},
+        idempotent => 1,
+    },
+};
+sub deluser {
+    my %args = @_;
+
+    my $tx_action = $args{-tx_action} // '';
+    my $user      = $args{user} or return [400, "Please specify user"];
+    $user =~ $Unix::Passwd::File::re_user
+        or return [400, "Invalid user"];
+    my %ca        = (etc_dir => $args{etc_dir} // "/etc", user=>$user);
+
+    my $res = Unix::Passwd::File::get_user(%ca);
+    return $res unless $res->[0] == 200 || $res->[0] == 404;
+
+    return [304, "User doesn't exist"] if $res->[0] == 404;
+
+    my @undo;
+
+    if ($tx_action eq 'check_state') {
+        return [200, "Fixable", undef, {undo_actions=>[
+            [adduser => {%ca, uid => $res->[2]{uid}}],
+        ]}];
+    } elsif ($tx_action eq 'fix_state') {
+        $log->infof("Deleting Unix user %s ...", $user);
+        return Unix::Passwd::File::delete_user(%ca);
+    }
+    [400, "Invalid -tx_action"];
+}
+
+$SPEC{adduser} = {
+    v => 1.1,
+    summary => 'Add user',
+    args => {
+        %common_args,
+        uid => {
+            summary => 'Add with specified UID',
+            description => <<'_',
+
+If not specified, will search an unused UID from `min_new_uid` to `max_new_uid`.
+
+_
+            schema => 'int',
+        },
+        min_new_uid => {
+            schema => [int => {default=>1000}],
+        },
+        max_new_uid => {
+            schema => [int => {default=>65534}],
+        },
+    },
+    features => {
+        tx => {v=>2},
+        idempotent => 1,
+    },
+};
+sub adduser {
 }
 
 $SPEC{setup_unix_user} = {
@@ -165,6 +245,8 @@ sub setup_unix_user {
     my $res;
     my (@do, @undo);
 
+    my $res = Unix::Passwd::File::list_users_and_groups(
+
     # check state:
     # - check group $user exists -> fix
     # - check usernya exist -> fix
@@ -218,217 +300,6 @@ sub setup_unix_user {
     }
 
 }
-
-###########
-my $found = defined($uid);
-        my $minuid = $args->{min_new_uid} // 1;
-        my $maxuid = $args->{max_new_uid} // 65535;
-        if (!$found) {
-            $log->trace("finding an unused UID ...");
-            my @uids = map {($pu->user($_))[1]} $pu->users;
-            $uid = $minuid;
-            while (1) {
-                last if $uid > $maxuid;
-                unless ($uid ~~ @uids) {
-                    $log->tracef("found unused UID: %d", $uid);
-                    $found++;
-                    last;
-                }
-                $uid++;
-            }
-        }
-        return [412, "Can't find unused UID"] unless $found;
-
-        $found = defined($gid);
-        my $mingid = $args->{min_new_gid}   // $uid;
-        my $maxgid = $args->{max_new_gid}   // $maxuid;
-        my $pgroup = $args->{primary_group} // $name;
-        if (!$found) {
-            my @g = $pu->group($pgroup);
-            if ($g[0]) {
-                $gid = $g[0];
-            } else {
-                $log->trace("Creating primary group for user $name: ".
-                                "$pgroup ...");
-                my %s_args = (
-                    name          => $pgroup,
-                    _passwd_path  => $passwd_path,
-                    _shadow_path  => $shadow_path,
-                    _group_path   => $group_path,
-                    _gshadow_path => $gshadow_path,
-                    min_new_gid   => $mingid,
-                    max_new_gid   => $maxgid,
-                );
-                my $res = setup_unix_group(
-                    %s_args, -undo_action => $save_undo ? 'do' : undef);
-                $log->tracef("res from setup_unix_group: %s", $res);
-                    if ($res->[0] != 200) {
-                        $err = "Can't setup Unix group $pgroup: ".
-                            "$res->[0] - $res->[1]";
-                    } else {
-                        $gid = $res->[2]{gid};
-                        unshift @$undo_steps,
-                            ["unsetup_unix_group", \%s_args,
-                             $res->[3]{undo_data}];
-                    }
-                }
-            }
-
-            $log->trace("Creating Unix user $name ...");
-            if (defined $step->[3]) {
-                $pu->user($name, $step->[3], $step->[1], $step->[2],
-                          $step->[4], $step->[5], $step->[6]);
-            } else {
-                $pu->user($name, $pu->encpass($new_password), $uid, $gid,
-                          $new_gecos, $new_home_dir, $new_shell);
-            }
-            if ($Passwd::Unix::Alt::errstr) {
-                $err = "Can't add Unix passwd entry: ".
-                    $Passwd::Unix::Alt::errstr;
-            } else {
-                unshift @$undo_steps, ["delete"];
-            }
-
-            for my $gi (@$member_of) {
-                my @g = $pu->group($gi); # XXX check error
-                unless ($g[0]) {
-                    $log->warn("group $gi doesn't exist, skipped");
-                    next;
-                }
-                unless ($name ~~ @{$g[1]}) {
-                    $log->trace("Adding user $name to group $gi ...");
-                    push @{$g[1]}, $name;
-                    $pu->group($gi, $g[0], $g[1]);
-                    if ($Passwd::Unix::Alt::errstr) {
-                        $err = "Can't add user to group $gi: ".
-                            $Passwd::Unix::Alt::errstr;
-                        goto CHECK_ERR;
-                    }
-                }
-            }
-
-            if ($create_home_dir) {
-                $log->tracef("Creating home dir %s ...", $new_home_dir);
-                my %s_args = (path=>$new_home_dir, mode=>$new_home_dir_mode,
-                              should_exist=>1);
-                unless ($>) {
-                    $s_args{owner} = $uid;
-                    $s_args{group} = $gid;
-                }
-                my $res = setup_dir(%s_args, -undo_action=>"do",
-                                    -undo_hint=>{tmp_dir=>$tmp_dir});
-                if ($res->[0] != 200 && $res->[0] != 304) {
-                    $err = "Can't create home dir: $res->[0] - $res->[1]";
-                    goto CHECK_ERR;
-                }
-                unshift @$undo_steps,
-                    ["unsetup_dir", \%s_args, $res->[3]{undo_data}]
-                        unless $res->[0] == 304;
-            }
-            if ($create_home_dir && $use_skel_dir) {
-                my $old_cwd = $CWD;
-                if (!(-d $skel_dir)) {
-                    $log->warnf("skel dir %s doesn't exist, ".
-                                    "skipped copying files", $skel_dir);
-                } elsif (!(eval { $CWD = $skel_dir })) {
-                    $log->warnf("Can't chdir to skel dir %s, skipped");
-                } else {
-                    $log->tracef("Copying files from skeleton %s ...",
-                                 $skel_dir);
-                    # XXX currently all file/dir created default mode (755/644)
-                    # XXX doesn't handle symlink yet
-                    find(
-                        sub {
-                            return if $_ eq '.' || $_ eq '..';
-                            my $d = $File::Find::dir;
-                            $d =~ s!^\./?!!;
-                            my $p = (length($d) ? "$d/" : "").$_;
-                            $log->tracef("skel: %s", $p); # TMP
-                            my %s_args = (path=>"$new_home_dir/$p",
-                                          should_exist=>1);
-                            my $res;
-                            if (-d $_) {
-                                $res = setup_dir(
-                                    %s_args, -undo_action=>"do",
-                                    -undo_hint=>{tmp_dir=>$tmp_dir});
-                                # ignore error
-                                if ($res->[0] == 200) {
-                                    unshift @$undo_steps,
-                                        ["unsetup_dir",
-                                         \%s_args, $res->[3]{undo_data}];
-                                }
-                            } else {
-                                my $content = read_file($_, err_mode=>'quiet');
-                                $res = setup_file(
-                                    %s_args, -undo_action=>"do",
-                                    gen_content_code=>sub {$content},
-                                    -undo_hint=>{tmp_dir=>$tmp_dir});
-                                # ignore error
-                                if ($res->[0] == 200) {
-                                    unshift @$undo_steps,
-                                        ["unsetup_file",
-                                         \%s_args, $res->[3]{undo_data},
-                                         $content];
-                                }
-                            }
-                        }, "."
-                    );
-                    $CWD = $old_cwd;
-                } # if copy skel
-            } # if create home dir
-
-        } elsif ($step->[0] eq 'delete') { # arg: -
-
-            $pu->del($name);
-            if ($Passwd::Unix::Alt::errstr) {
-                $err = $Passwd::Unix::Alt::errstr;
-            } else {
-                unshift @$undo_steps, ['create', @{$step}[1..@$step-1]];
-            }
-
-        } elsif ($step->[0] eq 'add_group') { # arg: group name
-
-            my $gi = $step->[1];
-            my @g = $pu->group($gi); # XXX check error
-            unless ($g[0]) {
-                $log->warn("group $gi doesn't exist, skipped");
-                next STEP;
-            }
-            if ($name ~~ @{$g[1]}) {
-                # user already member of this group
-                next STEP;
-            }
-            $log->trace("Adding $name to group $gi ...");
-            push @{$g[1]}, $name;
-            $pu->group($gi, $g[0], $g[1]);
-            if ($Passwd::Unix::Alt::errstr) {
-                $err = "Can't add user to group $gi: ".
-                    $Passwd::Unix::Alt::errstr;
-                goto CHECK_ERR;
-            }
-            unshift @$undo_steps, ["remove_group", $gi];
-
-        } elsif ($step->[0] eq 'remove_group') { # arg: group name
-
-            my $gi = $step->[1];
-            my @g = $pu->group($gi); # XXX check error
-            unless ($g[0]) {
-                $log->warn("group $gi doesn't exist, skipped");
-                next STEP;
-            }
-            unless ($name ~~ @{$g[1]}) {
-                # user already not member of this group
-                next STEP;
-            }
-            $log->trace("Removing $name from group $i ...");
-            $g[1] = [grep {$_ ne $name} @{$g[1]}];
-            $pu->group($gi, $g[0], $g[1]);
-            if ($Passwd::Unix::Alt::errstr) {
-                $err = "Can't add user to group $gi: ".
-                    $Passwd::Unix::Alt::errstr;
-                goto CHECK_ERR;
-            }
-            unshift @$undo_steps, ["add_group", $gi];
 
 1;
 # ABSTRACT: Setup Unix user (existence, home dir, group memberships)
