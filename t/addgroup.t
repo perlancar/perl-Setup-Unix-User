@@ -22,7 +22,7 @@ test_tx_action(
     name        => "fixed: group already exists",
     tmpdir      => $tmpdir,
     f           => "Setup::Unix::Group::addgroup",
-    args        => {etc_dir=>"$tmpdir/etc", group=>"u1"},
+    args        => {%ca, group=>"u1"},
     reset_state => sub {
         remove_tree "etc";
         rcopy "$Bin/data/simple", "etc";
@@ -34,7 +34,7 @@ test_tx_action(
     name        => "unfixable: group already exists with different gid",
     tmpdir      => $tmpdir,
     f           => "Setup::Unix::Group::addgroup",
-    args        => {etc_dir=>"$tmpdir/etc", group=>"u1", gid=>1001},
+    args        => {%ca, group=>"u1", gid=>1001},
     reset_state => sub {
         remove_tree "etc";
         rcopy "$Bin/data/simple", "etc";
@@ -66,7 +66,7 @@ test_tx_action(
     name        => "gid argument, add non-unique gid is ok",
     tmpdir      => $tmpdir,
     f           => "Setup::Unix::Group::addgroup",
-    args        => {etc_dir=>"$tmpdir/etc", group=>"foo", gid=>1001},
+    args        => {%ca, group=>"foo", gid=>1001},
     reset_state => sub {
         remove_tree "etc";
         rcopy "$Bin/data/simple", "etc";
@@ -86,8 +86,7 @@ test_tx_action(
     name        => "min_gid/max_gid argument (available)",
     tmpdir      => $tmpdir,
     f           => "Setup::Unix::Group::addgroup",
-    args        => {etc_dir=>"$tmpdir/etc", group=>"foo",
-                    min_gid=>2000, max_gid=>2001},
+    args        => {%ca, group=>"foo", min_gid=>2000, max_gid=>2001},
     reset_state => sub {
         remove_tree "etc";
         rcopy "$Bin/data/simple", "etc";
@@ -107,8 +106,7 @@ test_tx_action(
     name        => "min_gid/max_gid argument (unavailable)",
     tmpdir      => $tmpdir,
     f           => "Setup::Unix::Group::addgroup",
-    args        => {etc_dir=>"$tmpdir/etc", group=>"foo",
-                    min_gid=>1000, max_gid=>1001},
+    args        => {%ca, group=>"foo", min_gid=>1000, max_gid=>1001},
     reset_state => sub {
         remove_tree "etc";
         rcopy "$Bin/data/simple", "etc";
