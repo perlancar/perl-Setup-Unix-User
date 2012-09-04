@@ -82,6 +82,40 @@ test_tx_action(
     },
 );
 
+test_tx_action(
+    name        => "min_gid/max_gid argument (available)",
+    tmpdir      => $tmpdir,
+    f           => "Setup::Unix::Group::addgroup",
+    args        => {etc_dir=>"$tmpdir/etc", group=>"foo",
+                    min_gid=>2000, max_gid=>2001},
+    reset_state => sub {
+        remove_tree "etc";
+        rcopy "$Bin/data/simple", "etc";
+    },
+    after_do    => sub {
+        my $res = get_group(%ca, group=>"foo");
+        is($res->[0], 200, "group exists");
+        is($res->[2]{gid}, 2000, "gid");
+    },
+    after_undo  => sub {
+        my $res = get_group(%ca, group=>"foo");
+        is($res->[0], 404, "group doesn't exist");
+    },
+);
+
+test_tx_action(
+    name        => "min_gid/max_gid argument (unavailable)",
+    tmpdir      => $tmpdir,
+    f           => "Setup::Unix::Group::addgroup",
+    args        => {etc_dir=>"$tmpdir/etc", group=>"foo",
+                    min_gid=>1000, max_gid=>1001},
+    reset_state => sub {
+        remove_tree "etc";
+        rcopy "$Bin/data/simple", "etc";
+    },
+    status => 532,
+);
+
 DONE_TESTING:
 done_testing();
 if (Test::More->builder->is_passing) {

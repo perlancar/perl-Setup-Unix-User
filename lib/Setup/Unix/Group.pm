@@ -29,6 +29,13 @@ my %common_args = (
 $SPEC{delgroup} = {
     v => 1.1,
     summary => 'Delete group',
+    description => <<'_',
+
+Fixed state: group does not exist.
+
+Fixable state: group exists.
+
+_
     args => {
         %common_args,
     },
@@ -41,24 +48,26 @@ sub delgroup {
     my %args = @_;
 
     my $tx_action = $args{-tx_action} // '';
+    my $dry_run   = $args{-tx_action} // '';
     my $group     = $args{group} or return [400, "Please specify group"];
     $group =~ $Unix::Passwd::File::re_group
         or return [400, "Invalid group"];
     my %ca        = (etc_dir => $args{etc_dir} // "/etc", group=>$group);
-
-    my $res = Unix::Passwd::File::get_group(%ca);
-    return $res unless $res->[0] == 200 || $res->[0] == 404;
-
-    return [304, "Group doesn't exist"] if $res->[0] == 404;
-
-    my @undo;
+    my $res;
 
     if ($tx_action eq 'check_state') {
-        return [200, "Fixable", undef, {undo_actions=>[
+        my $res = Unix::Passwd::File::get_group(%ca);
+        return $res unless $res->[0] == 200 || $res->[0] == 404;
+
+        return [304, "Group $group already doesn't exist"] if $res->[0] == 404;
+        $log->info("(DRY) Deleting Unix group $group ...") if $dry_run;
+        return [200, "Group $group needs to be deleted", undef, {undo_actions=>[
             [addgroup => {%ca, gid => $res->[2]{gid}}],
         ]}];
     } elsif ($tx_action eq 'fix_state') {
-        $log->infof("Deleting Unix group %s ...", $group);
+        # we don't want to have to get_group() when fixing state, to reduce
+        # number of read passes to the passwd files
+        $log->info("Deleting Unix group $group ...");
         return Unix::Passwd::File::delete_group(%ca);
     }
     [400, "Invalid -tx_action"];
@@ -75,8 +84,35 @@ $SPEC{addgroup} = {
 
 If not specified, will search an unused GID from `min_new_gid` to `max_new_gid`.
 
+If specified, will accept non-unique GID (that which has been used by other
+group).
+
 _
             schema => 'int',
+        },
+        min_gid => {
+            summary => 'Specify range for new GID',
+            description => <<'_',
+
+If a free GID between `min_gid` and `max_gid` is not available, an error is
+returned.
+
+Passed to Unix::Passwd::File's `min_new_gid`.
+
+_
+            schema => [int => {between=>[0, 65535], default=>1000}],
+        },
+        max_gid => {
+            summary => 'Specify range for new GID',
+            description => <<'_',
+
+If a free GID between `min_gid` and `max_gid` is not available, an error is
+returned.
+
+Passed to Unix::Passwd::File's `max_new_gid`.
+
+_
+            schema => [int => {between=>[0, 65535], default=>65534}],
         },
     },
     features => {
@@ -88,10 +124,13 @@ sub addgroup {
     my %args = @_;
 
     my $tx_action = $args{-tx_action} // '';
+    my $dry_run   = $args{-dry_run};
     my $group     = $args{group} or return [400, "Please specify group"];
     $group =~ $Unix::Passwd::File::re_group
         or return [400, "Invalid group"];
     my $gid       = $args{gid};
+    my $min_gid   = $args{min_gid} //  1000;
+    my $max_gid   = $args{max_gid} // 65534;
     my %ca0       = (etc_dir => $args{etc_dir} // "/etc");
     my %ca        = (%ca0, group=>$group);
     my $res;
@@ -102,22 +141,24 @@ sub addgroup {
 
         if ($res->[0] == 200) {
             if (!defined($gid) || $gid == $res->[2]{gid}) {
-                return [304, "Group already exists"];
+                return [304, "Group $group already exists"];
             } else {
-                return [412, "Group already exists but with different GID ".
-                            "($res->[2]{gid}, wanted $gid)"];
+                return [412, "Group $group already exists but with different ".
+                            "GID ($res->[2]{gid}, wanted $gid)"];
             }
         } else {
-            return [200, "Group $group doesn't exist", undef, {undo_actions=>[
-                [delgroup => {%ca}],
+            $log->info("(DRY) Adding Unix group $group ...") if $dry_run;
+            return [200, "Group $group needs to be added", undef,
+                    {undo_actions=>[
+                        [delgroup => {%ca}],
             ]}];
         }
     } elsif ($tx_action eq 'fix_state') {
-        $log->infof("Adding Unix group %s ...", $group);
-        $res = Unix::Passwd::File::add_group(%ca, gid=>$gid);
-
-    } else {
-        $res = Unix::Passwd::File::add_group(%ca, gid=>$gid);
+        # we don't want to have to get_group() when fixing state, to reduce
+        # number of read passes to the passwd files
+        $log->info("Adding Unix group $group ...");
+        $res = Unix::Passwd::File::add_group(
+            %ca, gid=>$gid, min_gid=>$min_gid, max_gid=>$max_gid);
         if ($res->[0] == 200) {
             $args{-stash}{result}{gid} = $gid;
             return [200, "Created"];
@@ -147,8 +188,19 @@ _
         idempotent => 1,
     },
 };
+for (qw/setup_unix_user/) {
+    $SPEC{$_}{args}{min_new_gid} = delete $SPEC{$_}{args}{min_gid};
+    $SPEC{$_}{args}{max_new_gid} = delete $SPEC{$_}{args}{max_gid};
+    $SPEC{$_}{args}{new_gid}     = delete $SPEC{$_}{args}{gid};
+}
 sub setup_unix_group {
-    addgroup(@_);
+    my %args = @_;
+
+    $args{min_gid} = delete $args{min_new_gid};
+    $args{max_gid} = delete $args{max_new_gid};
+    $args{gid}     = delete $args{new_gid};
+
+    addgroup(%args);
 }
 
 1;

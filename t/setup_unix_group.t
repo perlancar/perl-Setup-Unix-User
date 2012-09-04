@@ -19,6 +19,12 @@ test_setup_unix_group(
     after_undo => {exists=>0},
 );
 test_setup_unix_group(
+    name       => "create with new_gid (success)",
+    args       => {group=>"g1", new_gid=>2000},
+    after_do   => {gid=>2000},
+    after_undo => {exists=>0},
+);
+test_setup_unix_group(
     name       => "create with min_new_gid & max_new_gid",
     args       => {group=>"g2", min_new_gid=>1000, max_new_gid=>1002},
     after_do   => {gid=>1001},
@@ -27,7 +33,7 @@ test_setup_unix_group(
 test_setup_unix_group(
     name       => "create failed due gids unavailable",
     args       => {group=>"g3", min_new_gid=>1000, max_new_gid=>1000},
-    status     => 412,
+    status     => 532,
 );
 test_setup_unix_group(
     name       => "create already created -> noop",
