@@ -9,6 +9,7 @@ require Exporter;
 our @ISA       = qw(Exporter);
 our @EXPORT_OK = qw(setup_unix_group);
 
+use PerlX::Maybe;
 use Unix::Passwd::File;
 
 # VERSION
@@ -158,7 +159,10 @@ sub addgroup {
         # number of read passes to the passwd files
         $log->info("Adding Unix group $group ...");
         $res = Unix::Passwd::File::add_group(
-            %ca, gid=>$gid, min_gid=>$min_gid, max_gid=>$max_gid);
+            %ca,
+            maybe gid     => $gid,
+            min_gid => $min_gid,
+            max_gid => $max_gid);
         if ($res->[0] == 200) {
             $args{-stash}{result}{gid} = $res->[2]{gid};
             return [200, "Created"];
@@ -227,9 +231,9 @@ sub setup_unix_group {
             push    @do  , [delgroup=>{%ca}];
             unshift @undo, [addgroup=>{
                 %ca,
-                gid     => $args{new_gid},
-                min_gid => $args{min_new_gid},
-                max_gid => $args{max_new_gid},
+                maybe gid     => $args{new_gid},
+                maybe min_gid => $args{min_new_gid},
+                maybe max_gid => $args{max_new_gid},
             }];
         }
     } else {
@@ -239,9 +243,9 @@ sub setup_unix_group {
             $log->info("(DRY) Adding group $group ...");
             push    @do  , [addgroup=>{
                 %ca,
-                gid     => $args{new_gid},
-                min_gid => $args{min_new_gid},
-                max_gid => $args{max_new_gid},
+                maybe gid     => $args{new_gid},
+                maybe min_gid => $args{min_new_gid},
+                maybe max_gid => $args{max_new_gid},
             }];
             unshift @do  , [delgroup=>{%ca}];
         }

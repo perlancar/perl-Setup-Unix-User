@@ -8,6 +8,7 @@ use Log::Any '$log';
 use File::chdir;
 use File::Find;
 use File::Slurp;
+use PerlX::Maybe;
 use Text::Password::Pronounceable;
 use Unix::Passwd::File;
 
@@ -162,17 +163,17 @@ sub adduser {
         $log->info("Adding Unix user $user ...");
         $res = Unix::Passwd::File::add_user(
             %ca,
-            uid     => $uid,
+            maybe uid     => $uid,
             min_uid => $args{min_uid} // 1000,
             max_uid => $args{max_uid} // 65534,
-            group   => $args{group},
-            gid     => $args{gid},
+            maybe group   => $args{group},
+            maybe gid     => $args{gid},
             min_gid => $args{min_gid} // 1000,
             max_gid => $args{max_gid} // 65534,
-            pass    => $args{pass},
-            gecos   => $args{gecos},
-            home    => $args{home},
-            shell   => $args{shell},
+            maybe pass    => $args{pass},
+            maybe gecos   => $args{gecos},
+            maybe home    => $args{home},
+            maybe shell   => $args{shell},
         );
         if ($res->[0] == 200) {
             $args{-stash}{result}{uid} = $uid;
