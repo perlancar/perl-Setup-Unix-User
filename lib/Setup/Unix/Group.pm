@@ -52,7 +52,7 @@ sub delgroup {
     my $group     = $args{group} or return [400, "Please specify group"];
     $group =~ $Unix::Passwd::File::re_group
         or return [400, "Invalid group"];
-    my %ca        = (etc_dir => $args{etc_dir} // "/etc", group=>$group);
+    my %ca        = (etc_dir => $args{etc_dir}, group=>$group);
     my $res;
 
     if ($tx_action eq 'check_state') {
@@ -131,7 +131,7 @@ sub addgroup {
     my $gid       = $args{gid};
     my $min_gid   = $args{min_gid} //  1000;
     my $max_gid   = $args{max_gid} // 65534;
-    my %ca0       = (etc_dir => $args{etc_dir} // "/etc");
+    my %ca0       = (etc_dir => $args{etc_dir});
     my %ca        = (%ca0, group=>$group);
     my $res;
 
@@ -160,7 +160,7 @@ sub addgroup {
         $res = Unix::Passwd::File::add_group(
             %ca, gid=>$gid, min_gid=>$min_gid, max_gid=>$max_gid);
         if ($res->[0] == 200) {
-            $args{-stash}{result}{gid} = $gid;
+            $args{-stash}{result}{gid} = $res->[2]{gid};
             return [200, "Created"];
         } else {
             return $res;
