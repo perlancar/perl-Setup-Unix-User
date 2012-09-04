@@ -175,20 +175,32 @@ $SPEC{setup_unix_group} = {
     description => <<'_',
 
 On do, will create Unix group if not already exists. The created GID will be
-returned in the result (`{gid => GID}`).
+returned in the result (`{gid => GID}`). If `should_already_exist` is set to
+true, won't create but only require that group already exists. If `should_exist`
+is set to false, will delete existing group instead of creating it.
 
 On undo, will delete Unix group previously created.
 
 On redo, will recreate the Unix group with the same GID.
 
 _
-    args => $SPEC{adduser}{args},
+    args => {
+        should_exit => {
+            summary => 'Whether group should exist',
+            schema  => [bool => {default=>1}],
+        },
+        should_already_exist => {
+            summary => 'Whether group should exist',
+            schema  => 'bool',
+        },
+        %{ $SPEC{addgroup}{args} },
+    },
     features => {
         tx => {v=>2},
         idempotent => 1,
     },
 };
-for (qw/setup_unix_user/) {
+for (qw/setup_unix_group/) {
     $SPEC{$_}{args}{min_new_gid} = delete $SPEC{$_}{args}{min_gid};
     $SPEC{$_}{args}{max_new_gid} = delete $SPEC{$_}{args}{max_gid};
     $SPEC{$_}{args}{new_gid}     = delete $SPEC{$_}{args}{gid};
@@ -196,11 +208,50 @@ for (qw/setup_unix_user/) {
 sub setup_unix_group {
     my %args = @_;
 
-    $args{min_gid} = delete $args{min_new_gid};
-    $args{max_gid} = delete $args{max_new_gid};
-    $args{gid}     = delete $args{new_gid};
+    # TMP, schema
+    my $dry_run       = $args{-dry_run};
+    my $group         = $args{group} or return [400, "Please specify group"];
+    $group =~ $Unix::Passwd::File::re_group
+        or return [400, "Invalid group"];
+    my $should_exist  = $args{should_exist} // 1;
+    my $should_aexist = $args{should_already_exist};
+    my %ca            = (etc_dir=>$args{etc_dir}, group=>$group);
 
-    addgroup(%args);
+    my $exists = Unix::Passwd::File::group_exists(%ca);
+    my (@do, @undo);
+
+    $log->tracef("group=%s, exists=%s, should_exist=%s, ", $group, $exists, $should_exist);
+    if ($exists) {
+        if (!$should_exist) {
+            $log->info("(DRY) Deleting group $group ...");
+            push    @do  , [delgroup=>{%ca}];
+            unshift @undo, [addgroup=>{
+                %ca,
+                gid     => $args{new_gid},
+                min_gid => $args{min_new_gid},
+                max_gid => $args{max_new_gid},
+            }];
+        }
+    } else {
+        if ($should_aexist) {
+            return [412, "Group $group should already exist"];
+        } elsif ($should_exist) {
+            $log->info("(DRY) Adding group $group ...");
+            push    @do  , [addgroup=>{
+                %ca,
+                gid     => $args{new_gid},
+                min_gid => $args{min_new_gid},
+                max_gid => $args{max_new_gid},
+            }];
+            unshift @do  , [delgroup=>{%ca}];
+        }
+    }
+
+    if (@do) {
+        return [200, "", undef, {do_actions=>\@do, undo_actions=>\@undo}];
+    } else {
+        return [304, "Already fixed"];
+    }
 }
 
 1;
