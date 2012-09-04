@@ -78,12 +78,6 @@ If not specified, will search an unused GID from `min_new_gid` to `max_new_gid`.
 _
             schema => 'int',
         },
-        min_new_gid => {
-            schema => [int => {default=>1000}],
-        },
-        max_new_gid => {
-            schema => [int => {default=>65534}],
-        },
     },
     features => {
         tx => {v=>2},
@@ -100,49 +94,29 @@ sub addgroup {
     my $gid       = $args{gid};
     my %ca0       = (etc_dir => $args{etc_dir} // "/etc");
     my %ca        = (%ca0, group=>$group);
-
-    my $res = Unix::Passwd::File::get_group(%ca);
-    $log->errorf("result of get_group: %s", $res);
-    return $res unless $res->[0] == 200 || $res->[0] == 404;
-
-    if ($res->[0] == 200) {
-        if (!defined($gid) || $gid == $res->[2]{gid}) {
-            return [304, "Group already exists"];
-        } else {
-            return [412, "Group already exists but with different GID ".
-                        "($res->[2]{gid}, wanted $gid)"];
-        }
-    } else {
-        my $found = defined($gid);
-        if (!$found) {
-            $res = Unix::Passwd::File::list_groups(%ca0, detail=>1);
-            return $res unless $res->[0] == 200;
-            my @gids = map {$_->{gid}} @{$res->[2]};
-            #$log->tracef("gids = %s", \@gids);
-            my $max;
-            # we shall search a range for a free gid
-            $gid = $args{min_new_gid} //  1000;
-            $max = $args{max_new_gid} // 65534;
-            $log->tracef("finding an unused GID from %d to %d ...", $gid, $max);
-            while (1) {
-                last if $gid > $max;
-                unless ($gid ~~ @gids) {
-                    #$log->tracef("found unused GID: %d", $gid);
-                    $found++;
-                    last;
-                }
-                $gid++;
-            }
-            return [412, "Can't find unused GID"] unless $found;
-        }
-    }
+    my $res;
 
     if ($tx_action eq 'check_state') {
-        return [200, "Fixable", undef, {undo_actions=>[
-            [delgroup => {%ca, gid=>$gid}],
-        ]}];
+        $res = Unix::Passwd::File::get_group(%ca);
+        return $res unless $res->[0] == 200 || $res->[0] == 404;
+
+        if ($res->[0] == 200) {
+            if (!defined($gid) || $gid == $res->[2]{gid}) {
+                return [304, "Group already exists"];
+            } else {
+                return [412, "Group already exists but with different GID ".
+                            "($res->[2]{gid}, wanted $gid)"];
+            }
+        } else {
+            return [200, "Group $group doesn't exist", undef, {undo_actions=>[
+                [delgroup => {%ca}],
+            ]}];
+        }
     } elsif ($tx_action eq 'fix_state') {
         $log->infof("Adding Unix group %s ...", $group);
+        $res = Unix::Passwd::File::add_group(%ca, gid=>$gid);
+
+    } else {
         $res = Unix::Passwd::File::add_group(%ca, gid=>$gid);
         if ($res->[0] == 200) {
             $args{-stash}{result}{gid} = $gid;
