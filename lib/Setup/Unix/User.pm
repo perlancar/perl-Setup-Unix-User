@@ -49,24 +49,24 @@ sub deluser {
     my %args = @_;
 
     my $tx_action = $args{-tx_action} // '';
+    my $dry_run   = $args{-dry_run};
     my $user      = $args{user} or return [400, "Please specify user"];
     $user =~ $Unix::Passwd::File::re_user
         or return [400, "Invalid user"];
-    my %ca        = (etc_dir => $args{etc_dir} // "/etc", user=>$user);
-
-    my $res = Unix::Passwd::File::get_user(%ca);
-    return $res unless $res->[0] == 200 || $res->[0] == 404;
-
-    return [304, "User doesn't exist"] if $res->[0] == 404;
-
-    my @undo;
+    my %ca        = (etc_dir => $args{etc_dir}, user=>$user);
+    my $res;
 
     if ($tx_action eq 'check_state') {
+        $res = Unix::Passwd::File::get_user(%ca);
+        return $res unless $res->[0] == 200 || $res->[0] == 404;
+
+        return [304, "User $user already doesn't exist"] if $res->[0] == 404;
+        $log->info("(DRY) Deleting Unix user $user ...") if $dry_run;
         return [200, "Fixable", undef, {undo_actions=>[
             [adduser => {%ca, uid => $res->[2]{uid}}],
         ]}];
     } elsif ($tx_action eq 'fix_state') {
-        $log->infof("Deleting Unix user %s ...", $user);
+        $log->info("Deleting Unix user $user ...");
         return Unix::Passwd::File::delete_user(%ca);
     }
     [400, "Invalid -tx_action"];
@@ -81,16 +81,43 @@ $SPEC{adduser} = {
             summary => 'Add with specified UID',
             description => <<'_',
 
-If not specified, will search an unused UID from `min_new_uid` to `max_new_uid`.
+If not specified, will search an unused UID from `min_uid` to `max_uid`.
 
 _
             schema => 'int',
         },
-        min_new_uid => {
+        min_uid => {
             schema => [int => {default=>1000}],
         },
-        max_new_uid => {
+        max_uid => {
             schema => [int => {default=>65534}],
+        },
+        gid => {
+            summary => 'When creating group, use specific GID',
+            description => <<'_',
+
+If not specified, will search an unused GID from `min_gid` to `max_gid`.
+
+_
+            schema => 'int',
+        },
+        min_gid => {
+            schema => [int => {default=>1000}],
+        },
+        max_gid => {
+            schema => [int => {default=>65534}],
+        },
+        gecos => {
+            schema => 'str',
+        },
+        password => {
+            schema => 'str',
+        },
+        home => {
+            schema => 'str',
+        },
+        shell => {
+            schema => 'str',
         },
     },
     features => {
@@ -99,7 +126,65 @@ _
     },
 };
 sub adduser {
+    my %args = @_;
+
+    my $tx_action = $args{-tx_action} // '';
+    my $dry_run   = $args{-dry_run};
+    my $user      = $args{user} or return [400, "Please specify user"];
+    $user =~ $Unix::Passwd::File::re_user
+        or return [400, "Invalid user"];
+    my $uid       = $args{uid};
+    my %ca0       = (etc_dir => $args{etc_dir});
+    my %ca        = (%ca0, user=>$user);
+    my $res;
+
+    if ($tx_action eq 'check_state') {
+        $res = Unix::Passwd::File::get_user(%ca);
+        return $res unless $res->[0] == 200 || $res->[0] == 404;
+
+        if ($res->[0] == 200) {
+            if (!defined($uid) || $uid == $res->[2]{uid}) {
+                return [304, "User $user already exists"];
+            } else {
+                return [412, "User $user already exists but with different ".
+                            "UID ($res->[2]{uid}, wanted $uid)"];
+            }
+        } else {
+            $log->info("(DRY) Adding Unix user $user ...") if $dry_run;
+            return [200, "User $user needs to be added", undef,
+                    {undo_actions=>[
+                        [deluser => {%ca}],
+            ]}];
+        }
+    } elsif ($tx_action eq 'fix_state') {
+        # we don't want to have to get_user() when fixing state, to reduce
+        # number of read passes to the passwd files
+        $log->info("Adding Unix user $user ...");
+        $res = Unix::Passwd::File::add_user(
+            %ca,
+            uid     => $uid,
+            min_uid => $args{min_uid} // 1000,
+            max_uid => $args{max_uid} // 65534,
+            group   => $args{group},
+            gid     => $args{gid},
+            min_gid => $args{min_gid} // 1000,
+            max_gid => $args{max_gid} // 65534,
+            pass    => $args{pass},
+            gecos   => $args{gecos},
+            home    => $args{home},
+            shell   => $args{shell},
+        );
+        if ($res->[0] == 200) {
+            $args{-stash}{result}{uid} = $uid;
+            $args{-stash}{result}{gid} = $res;
+            return [200, "Created"];
+        } else {
+            return $res;
+        }
+    }
+    [400, "Invalid -tx_action"];
 }
+__END__
 
 $SPEC{setup_unix_user} = {
     v           => 1.1,
@@ -245,7 +330,7 @@ sub setup_unix_user {
     my $res;
     my (@do, @undo);
 
-    my $res = Unix::Passwd::File::list_users_and_groups(
+    my $res = Unix::Passwd::File::list_users_and_groups();
 
     # check state:
     # - check group $user exists -> fix
