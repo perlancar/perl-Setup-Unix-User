@@ -194,7 +194,7 @@ _
             schema  => [bool => {default=>1}],
         },
         should_already_exist => {
-            summary => 'Whether group should exist',
+            summary => 'Whether group should already exist',
             schema  => 'bool',
         },
         %{ $SPEC{addgroup}{args} },
