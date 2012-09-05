@@ -12,10 +12,10 @@ Revision history for Setup-Unix-User
 
         - Parameter name change: in setup_unix_user(), 'name' becomes 'user'; in
           setup_unix_group(), 'name' becomes 'group'. This is to align better
-          with Unix::Passwd::File.
+          with Unix::Passwd::File. Some parameters also got changed.
 
-        - Parameter default change: default min_new_uid and min_new_gid is now
-          1000 instead of 0. You can of course still set it to 0.
+        - Parameter default change: default 'min_new_uid' and 'min_new_gid' is
+          now 1000 instead of 0. You can of course still set it to 0.
 
 
 0.09    2012-03-29 (SHARYANTO)
