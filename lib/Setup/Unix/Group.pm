@@ -263,13 +263,6 @@ sub setup_unix_group {
 
 =head1 FAQ
 
-=head2 How to create group with a specific GID?
-
-Set C<min_new_gid> and C<max_new_gid> to your desired value. Note that the
-function will report failure if when wanting to create a group, the desired GID
-is already taken. But the function will not report failure if the group already
-exists, even with a different GID.
-
 
 =head1 SEE ALSO
 
