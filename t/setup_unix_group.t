@@ -15,7 +15,7 @@ setup();
 test_setup_unix_group(
     name       => "default",
     args       => {group=>"g1"},
-    after_do   => {gid=>3},
+    after_do   => {gid=>1001},
     after_undo => {exists=>0},
 );
 test_setup_unix_group(
