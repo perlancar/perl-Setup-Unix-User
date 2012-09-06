@@ -5,6 +5,7 @@ use strict;
 use warnings;
 use FindBin '$Bin';
 
+use Crypt::Password::Util qw(looks_like_crypt);
 use File::chdir;
 use File::Path qw(remove_tree);
 use File::Copy::Recursive qw(rcopy);
@@ -198,7 +199,7 @@ test_tx_action(
         is($res->[0], 200, "user exists");
         is($res->[2]{gid}, "1000", "gid");
         is($res->[2]{pass}, "x", "pass");
-        like($res->[2]{encpass}, qr/^\$6\$/, "encpass");
+        ok(looks_like_crypt($res->[2]{encpass}), "encpass");
         is($res->[2]{gecos}, "bar", "gid");
         is($res->[2]{home}, "/home2/foo", "home");
         is($res->[2]{shell}, "/bin/baz", "shell");

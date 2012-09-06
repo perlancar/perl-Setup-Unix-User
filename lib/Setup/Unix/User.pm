@@ -62,7 +62,7 @@ sub deluser {
 
         return [304, "User $user already doesn't exist"] if $res->[0] == 404;
         $log->info("(DRY) Deleting Unix user $user ...") if $dry_run;
-        return [200, "Fixable", undef, {undo_actions=>[
+        return [200, "User $user needs to be deleted", undef, {undo_actions=>[
             [adduser => {%ca, uid => $res->[2]{uid}}],
         ]}];
     } elsif ($tx_action eq 'fix_state') {
@@ -354,7 +354,7 @@ sub setup_unix_user {
     my $group         = $args{group} // $args{user};
     my $member_of     = $args{member_of} // [];
     push @$member_of, $group unless $group ~~ @$member_of;
-    my $not_member_of = [];
+    my $not_member_of = $args{not_member_of} // [];
     for (@$member_of) {
         return [400, "Group $_ is in member_of and not_member_of"]
             if $_ ~~ @$not_member_of;
@@ -370,6 +370,7 @@ sub setup_unix_user {
     my $groups = $res->[2][1];
     my $uentry = first {$_->{user} eq $user} @$users;
     my $exists = !!$uentry;
+    my $home   = $uentry->{home} // $args{new_home} // "/home/$user";
 
     my (@do, @undo);
 
@@ -388,12 +389,12 @@ sub setup_unix_user {
         maybe shell   => $args{new_shell},
     );
 
-    #$log->tracef("user=%s, exists=%s, should_exist=%s, ", $user, $exists, $should_exist);
+    #$log->tracef("user=%s, exists=%s, uentry=%s, should_exist=%s, ", $user, $exists, $uentry, $should_exist);
     {
         # create user
         if ($exists) {
             if (!$should_exist) {
-                $log->info("(DRY) Deleting user $user ...");
+                $log->info("(DRY) Deleting user $user ...") if $dry_run;
                 push    @do  , [deluser=>{%ca}];
                 unshift @undo, [adduser=>\%addargs];
                 last;
@@ -402,9 +403,9 @@ sub setup_unix_user {
             if ($should_aexist) {
                 return [412, "User $user should already exist"];
             } elsif ($should_exist) {
-                $log->info("(DRY) Adding user $user ...");
+                $log->info("(DRY) Adding user $user ...") if $dry_run;
                 push    @do  , [adduser=>\%addargs];
-                unshift @do  , [deluser=>{%ca}];
+                unshift @undo, [deluser=>{%ca}];
             }
         }
 
@@ -412,11 +413,12 @@ sub setup_unix_user {
         if ($exists) {
             my (@needs_add, @needs_del);
             for my $l (@$groups) {
-                my @mm = split /,/, $l->[-1];
-                push @needs_add, $l->[0]
-                    if $l->[0] ~~ @$member_of     && !($user ~~ @mm);
-                push @needs_del, $l->[0]
-                    if $l->[0] ~~ @$not_member_of &&  ($user ~~ @mm);
+                next if $l->{group} eq $group; # leave primary group alone
+                my @mm = split /,/, $l->{members};
+                push @needs_add, $l->{group}
+                    if $l->{group} ~~ @$member_of     && !($user ~~ @mm);
+                push @needs_del, $l->{group}
+                    if $l->{group} ~~ @$not_member_of &&  ($user ~~ @mm);
             }
             push @do,
                 [add_delete_user_groups=>{
@@ -424,35 +426,41 @@ sub setup_unix_user {
                     add_to=>\@needs_add, delete_from=>\@needs_del}]
                     if @needs_add || @needs_del;
         } else {
-            push @do,
-                [add_delete_user_groups=>{
-                    %ca,
-                    add_to=>$member_of, delete_from=>$not_member_of}];
+            unless (!@$not_member_of && @$member_of==1 &&
+                        $member_of->[0] eq $group) { # the default, no need fix
+                push @do,
+                    [add_delete_user_groups=>{
+                        %ca,
+                        add_to=>$member_of, delete_from=>$not_member_of}];
+            }
         }
 
         # create homedir
-        my $home = $uentry->{home};
+        my $home = $uentry->{home} // $args{new_home} // "/home/$user";
         if ($create_home && (!$exists || !(-d $home))) {
-            $log->info("(DRY) Creating home directory for $user ...");
+            $log->info("(DRY) Creating home directory for $user in $home ...")
+                if $dry_run;
             if ($use_skel) {
                 return [412, "Skeleton directory $skel_dir doesn't exist"]
                     unless (-d $skel_dir);
                 push @do, (
-                    ["File::Copy::Undoable" => {
+                    ["File::Copy::Undoable::cp" => {
                         source=>$skel_dir,
                         target=>$home, target_owner=>$user,
                     }],
                 );
                 unshift @undo, (
                     ["File::Trash::Undoable::trash" => {
-                        path=>$home, suffix=>substr($taid,0,8)}],
+                        path=>$home,
+                        suffix=>substr($taid,0,8),
+                    }],
                 );
             } else {
                 push @do, (
                     ["Setup::File::mkdir" => {path=>$home}],
                 );
                 unshift @undo, (
-                    ["Setup::File::mkdir" => {path=>$home}],
+                    ["Setup::File::rmdir" => {path=>$home}],
                 );
             }
             push @do, (
