@@ -224,7 +224,7 @@ sub setup_unix_group {
     my $exists = Unix::Passwd::File::group_exists(%ca);
     my (@do, @undo);
 
-    $log->tracef("group=%s, exists=%s, should_exist=%s, ", $group, $exists, $should_exist);
+    #$log->tracef("group=%s, exists=%s, should_exist=%s, ", $group, $exists, $should_exist);
     if ($exists) {
         if (!$should_exist) {
             $log->info("(DRY) Deleting group $group ...");
