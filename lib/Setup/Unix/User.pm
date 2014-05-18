@@ -3,6 +3,7 @@ package Setup::Unix::User;
 use 5.010001;
 use strict;
 use warnings;
+use experimental 'smartmatch';
 use Log::Any '$log';
 
 use List::Util qw(first);
@@ -122,6 +123,10 @@ $SPEC{adduser} = {
     args => {
         %common_args,
         %adduser_args,
+        group       => {
+            schema  => 'str*',
+            summary => 'Group name',
+        },
     },
     features => {
         tx => {v=>2},
@@ -279,10 +284,7 @@ memberships.
 
 _
     args => {
-        user => {
-            schema => 'str*',
-            summary => 'User name',
-        },
+        %common_args,
         should_exist => {
             schema => ['bool' => {default => 1}],
             summary => 'Whether user should exist',
@@ -326,6 +328,18 @@ _
             schema  => [str => {default => '/etc/skel'}],
             summary => 'Directory to get skeleton files when creating user',
         },
+        group       => {
+            schema  => 'str*',
+            summary => 'Group name',
+        },
+        min_uid     => {},
+        max_uid     => {},
+        min_new_uid => {},
+        max_new_uid => {},
+        min_gid     => {},
+        max_gid     => {},
+        min_new_gid => {},
+        max_new_gid => {},
     },
     features => {
         tx => {v=>2},

@@ -1,5 +1,12 @@
 Revision history for Setup-Unix-User
 
+0.11    2014-05-17 (SHARYANTO)
+
+        - No functional changes.
+
+        - Replace File::Slurp with File::Slurp::Tiny.
+
+
 0.10    2012-09-06 (SHARYANTO)
 
         [INCOMPATIBLE CHANGES]

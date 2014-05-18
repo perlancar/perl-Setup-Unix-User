@@ -189,7 +189,7 @@ On redo, will recreate the Unix group with the same GID.
 
 _
     args => {
-        should_exit => {
+        should_exist => {
             summary => 'Whether group should exist',
             schema  => [bool => {default=>1}],
         },
