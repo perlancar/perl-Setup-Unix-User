@@ -1,5 +1,8 @@
 package Setup::Unix::Group;
 
+# DATE
+# VERSION
+
 use 5.010;
 use strict;
 use warnings;
@@ -12,9 +15,12 @@ our @EXPORT_OK = qw(setup_unix_group);
 use PerlX::Maybe;
 use Unix::Passwd::File;
 
-# VERSION
-
 our %SPEC;
+
+$SPEC{':package'} = {
+    v => 1.1,
+    summary => 'Setup Unix group (existence)',
+};
 
 my %common_args = (
     etc_dir => {
@@ -259,7 +265,7 @@ sub setup_unix_group {
 }
 
 1;
-# ABSTRACT: Setup Unix group (existence)
+# ABSTRACT:
 
 =head1 FAQ
 

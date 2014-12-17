@@ -1,5 +1,8 @@
 package Setup::Unix::User;
 
+# DATE
+# VERSION
+
 use 5.010001;
 use strict;
 use warnings;
@@ -15,9 +18,12 @@ require Exporter;
 our @ISA       = qw(Exporter);
 our @EXPORT_OK = qw(setup_unix_user);
 
-# VERSION
-
 our %SPEC;
+
+$SPEC{':package'} = {
+    v => 1.1,
+    summary => 'Setup Unix user (existence, home dir, group memberships)',
+};
 
 sub _rand_pass {
     require Text::Password::Pronounceable;
@@ -491,7 +497,7 @@ sub setup_unix_user {
 }
 
 1;
-# ABSTRACT: Setup Unix user (existence, home dir, group memberships)
+# ABSTRACT:
 
 =head1 FAQ
 
