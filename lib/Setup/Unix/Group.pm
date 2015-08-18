@@ -6,7 +6,7 @@ package Setup::Unix::Group;
 use 5.010;
 use strict;
 use warnings;
-use Log::Any '$log';
+use Log::Any::IfLOG '$log';
 
 require Exporter;
 our @ISA       = qw(Exporter);

@@ -1,7 +1,7 @@
 use 5.010;
 use strict;
 use warnings;
-use Log::Any '$log';
+use Log::Any::IfLOG '$log';
 
 use File::chdir;
 use File::Path qw(remove_tree);
