@@ -1,5 +1,12 @@
 Revision history for Setup-Unix-User
 
+0.12    2015-08-18 (PERLANCAR)
+
+	- No functional changes.
+
+	- Switch from Log::Any to Log::Any::IfLOG.
+
+
 0.11    2014-05-17 (SHARYANTO)
 
         - No functional changes.
