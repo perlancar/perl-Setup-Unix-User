@@ -6,7 +6,7 @@ package Setup::Unix::Group;
 use 5.010;
 use strict;
 use warnings;
-use Log::Any::IfLOG '$log';
+use Log::ger;
 
 require Exporter;
 our @ISA       = qw(Exporter);
@@ -67,14 +67,14 @@ sub delgroup {
         return $res unless $res->[0] == 200 || $res->[0] == 404;
 
         return [304, "Group $group already doesn't exist"] if $res->[0] == 404;
-        $log->info("(DRY) Deleting Unix group $group ...") if $dry_run;
+        log_info("(DRY) Deleting Unix group $group ...") if $dry_run;
         return [200, "Group $group needs to be deleted", undef, {undo_actions=>[
             [addgroup => {%ca, gid => $res->[2]{gid}}],
         ]}];
     } elsif ($tx_action eq 'fix_state') {
         # we don't want to have to get_group() when fixing state, to reduce
         # number of read passes to the passwd files
-        $log->info("Deleting Unix group $group ...");
+        log_info("Deleting Unix group $group ...");
         return Unix::Passwd::File::delete_group(%ca);
     }
     [400, "Invalid -tx_action"];
@@ -154,7 +154,7 @@ sub addgroup {
                             "GID ($res->[2]{gid}, wanted $gid)"];
             }
         } else {
-            $log->info("(DRY) Adding Unix group $group ...") if $dry_run;
+            log_info("(DRY) Adding Unix group $group ...") if $dry_run;
             return [200, "Group $group needs to be added", undef,
                     {undo_actions=>[
                         [delgroup => {%ca}],
@@ -163,7 +163,7 @@ sub addgroup {
     } elsif ($tx_action eq 'fix_state') {
         # we don't want to have to get_group() when fixing state, to reduce
         # number of read passes to the passwd files
-        $log->info("Adding Unix group $group ...");
+        log_info("Adding Unix group $group ...");
         $res = Unix::Passwd::File::add_group(
             %ca,
             maybe gid     => $gid,
@@ -233,7 +233,7 @@ sub setup_unix_group {
     #$log->tracef("group=%s, exists=%s, should_exist=%s, ", $group, $exists, $should_exist);
     if ($exists) {
         if (!$should_exist) {
-            $log->info("(DRY) Deleting group $group ...");
+            log_info("(DRY) Deleting group $group ...");
             push    @do  , [delgroup=>{%ca}];
             unshift @undo, [addgroup=>{
                 %ca,
@@ -246,7 +246,7 @@ sub setup_unix_group {
         if ($should_aexist) {
             return [412, "Group $group should already exist"];
         } elsif ($should_exist) {
-            $log->info("(DRY) Adding group $group ...");
+            log_info("(DRY) Adding group $group ...");
             push    @do  , [addgroup=>{
                 %ca,
                 maybe gid     => $args{new_gid},

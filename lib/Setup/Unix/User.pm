@@ -7,7 +7,7 @@ use 5.010001;
 use strict;
 use warnings;
 use experimental 'smartmatch';
-use Log::Any::IfLOG '$log';
+use Log::ger;
 
 use List::Util qw(first);
 use PerlX::Maybe;
@@ -68,12 +68,12 @@ sub deluser {
         return $res unless $res->[0] == 200 || $res->[0] == 404;
 
         return [304, "User $user already doesn't exist"] if $res->[0] == 404;
-        $log->info("(DRY) Deleting Unix user $user ...") if $dry_run;
+        log_info("(DRY) Deleting Unix user $user ...") if $dry_run;
         return [200, "User $user needs to be deleted", undef, {undo_actions=>[
             [adduser => {%ca, uid => $res->[2]{uid}}],
         ]}];
     } elsif ($tx_action eq 'fix_state') {
-        $log->info("Deleting Unix user $user ...");
+        log_info("Deleting Unix user $user ...");
         return Unix::Passwd::File::delete_user(%ca);
     }
     [400, "Invalid -tx_action"];
@@ -164,7 +164,7 @@ sub adduser {
                             "UID ($res->[2]{uid}, wanted $uid)"];
             }
         } else {
-            $log->info("(DRY) Adding Unix user $user ...") if $dry_run;
+            log_info("(DRY) Adding Unix user $user ...") if $dry_run;
             return [200, "User $user needs to be added", undef,
                     {undo_actions=>[
                         [deluser => {%ca}],
@@ -173,7 +173,7 @@ sub adduser {
     } elsif ($tx_action eq 'fix_state') {
         # we don't want to have to get_user() when fixing state, to reduce
         # number of read passes to the passwd files
-        $log->info("Adding Unix user $user ...");
+        log_info("Adding Unix user $user ...");
         $res = Unix::Passwd::File::add_user(
             %ca,
             maybe uid     => $uid,
@@ -247,7 +247,7 @@ sub add_delete_user_groups {
         }
 
         if (@needs_add || @needs_del) {
-            $log->infof(
+            log_info(
                 "(DRY) Fixing user %s's membership, groups to add to: %s, ".
                     "groups to delete from: %s ...",
                 $user, \@needs_add, \@needs_del) if $dry_run;
@@ -266,7 +266,7 @@ sub add_delete_user_groups {
     } elsif ($tx_action eq 'fix_state') {
         # we don't want to have to get_user_groups() when fixing state, to
         # reduce number of read passes to the passwd files
-        $log->infof("Fixing user %s's membership, groups to add to: %s, ".
+        log_info("Fixing user %s's membership, groups to add to: %s, ".
                         "groups to delete from: %s ...",
                     $user, $add_to, $del_from);
         return Unix::Passwd::File::add_delete_user_groups(
@@ -414,7 +414,7 @@ sub setup_unix_user {
         # create user
         if ($exists) {
             if (!$should_exist) {
-                $log->info("(DRY) Deleting user $user ...") if $dry_run;
+                log_info("(DRY) Deleting user $user ...") if $dry_run;
                 push    @do  , [deluser=>{%ca}];
                 unshift @undo, [adduser=>\%addargs];
                 last;
@@ -423,7 +423,7 @@ sub setup_unix_user {
             if ($should_aexist) {
                 return [412, "User $user should already exist"];
             } elsif ($should_exist) {
-                $log->info("(DRY) Adding user $user ...") if $dry_run;
+                log_info("(DRY) Adding user $user ...") if $dry_run;
                 push    @do  , [adduser=>\%addargs];
                 unshift @undo, [deluser=>{%ca}];
             }
@@ -458,7 +458,7 @@ sub setup_unix_user {
         # create homedir
         my $home = $uentry->{home} // $args{new_home} // "/home/$user";
         if ($create_home && (!$exists || !(-d $home))) {
-            $log->info("(DRY) Creating home directory for $user in $home ...")
+            log_info("(DRY) Creating home directory for $user in $home ...")
                 if $dry_run;
             if ($use_skel) {
                 return [412, "Skeleton directory $skel_dir doesn't exist"]
