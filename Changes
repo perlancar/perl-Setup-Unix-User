@@ -1,4 +1,4 @@
-0.14    2017-07-10 (PERLANCAR)
+0.14    2017-07-10  Released-By: PERLANCAR
 
 	- No functional changes.
 
@@ -7,7 +7,7 @@
 	- Replace Log::Any with Log::ger.
 
 
-0.13    2015-09-04 (PERLANCAR)
+0.13    2015-09-04  Released-By: PERLANCAR
 
 	- No functional changes.
 
@@ -16,21 +16,21 @@
 	  requirement.
 
 
-0.12    2015-08-18 (PERLANCAR)
+0.12    2015-08-18  Released-By: PERLANCAR
 
 	- No functional changes.
 
 	- Switch from Log::Any to Log::Any::IfLOG.
 
 
-0.11    2014-05-17 (SHARYANTO)
+0.11    2014-05-17  Released-By: SHARYANTO
 
         - No functional changes.
 
         - Replace File::Slurp with File::Slurp::Tiny.
 
 
-0.10    2012-09-06 (SHARYANTO)
+0.10    2012-09-06  Released-By: SHARYANTO
 
         [INCOMPATIBLE CHANGES]
 
@@ -48,7 +48,7 @@
           now 1000 instead of 0. You can of course still set it to 0.
 
 
-0.09    2012-03-29 (SHARYANTO)
+0.09    2012-03-29  Released-By: SHARYANTO
 
         - Fix: Ignore membership to non-existant group.
 
@@ -57,12 +57,12 @@
         - build: Replace SubSpec PodWeaver plugin with Perinci.
 
 
-0.08    2012-03-02 (SHARYANTO)
+0.08    2012-03-02  Released-By: SHARYANTO
 
         - No functional changes. Replace Sub::Spec with Rinci.
 
 
-0.07    2011-08-11 (SHARYANTO)
+0.07    2011-08-11  Released-By: SHARYANTO
 
         [ENHANCEMENTS]
 
@@ -70,7 +70,7 @@
           creating a group with the same name as user [RT#70202]
 
 
-0.06    2011-05-20 (SHARYANTO)
+0.06    2011-05-20  Released-By: SHARYANTO
 
         - No functional changes.
 
@@ -79,17 +79,17 @@
         - (build) Add missing dep: Setup::File.
 
 
-0.05    2011-05-18 (SHARYANTO)
+0.05    2011-05-18  Released-By: SHARYANTO
 
         - No functional changes. Tweaked log messages.
 
 
-0.04    2011-05-18 (SHARYANTO)
+0.04    2011-05-18  Released-By: SHARYANTO
 
         - No functional changes. Changed logging levels.
 
 
-0.03    2011-05-17 (SHARYANTO)
+0.03    2011-05-17  Released-By: SHARYANTO
 
         [ENHANCEMENTS]
 
@@ -101,7 +101,7 @@
           Debian
 
 
-0.02    2011-05-17 (SHARYANTO)
+0.02    2011-05-17  Released-By: SHARYANTO
 
         [ENHANCEMENTS]
 
@@ -114,6 +114,6 @@
         - Bug: redo didn't recreate group with same GID.
 
 
-0.01    2011-04-28 (SHARYANTO)
+0.01    2011-04-28  Released-By: SHARYANTO
 
         - First release.
